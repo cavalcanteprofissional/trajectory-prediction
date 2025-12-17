@@ -1,24 +1,34 @@
-# Requirements gerado automaticamente pelo scanner
+# Requirements gerado automaticamente por requirements_scanner.py
+# Projeto: trajectory_prediction_project v1.0.0
+# Python requerido: >=3.8
+#
 # Para instalar: pip install -r requirements.txt
+# Para desenvolvimento: pip install -r requirements-dev.txt
 
-# Dependências principais
-
-catboost>=1.0.0
-downloader
-kaggle>=1.5.0
-lightgbm>=3.3.0
-matplotlib>=3.7.0
+# Data Science & ML
 numpy>=1.24.0
 pandas>=2.0.0
-python-dotenv>=1.0.0
 scikit-learn>=1.3.0
-seaborn>=0.12.0
+scipy
+
+# Boosting
+catboost>=1.0.0
+lightgbm>=3.3.0
 xgboost>=1.7.0
 
-# Informações do projeto
-# Projeto: trajectory-prediction
-# Versão: 1.0.0
-# Python requerido: >=3.8
+# Utils & Tools
+python-dotenv>=1.0.0
 
-# Para desenvolvimento, instale também:
-# pip install -r requirements-dev.txt
+# Outras dependências
+requirements_scanner
+setuptools
+tomli
+
+# Comandos úteis:
+# - Atualizar todas as dependências: pip install --upgrade -r requirements.txt
+# - Verificar dependências desatualizadas: pip list --outdated
+# - Gerar requirements.lock: pip freeze > requirements.lock
+
+# Notas:
+# Este arquivo foi gerado automaticamente. Para editar manualmente,
+# modifique o código-fonte e execute o scanner novamente.

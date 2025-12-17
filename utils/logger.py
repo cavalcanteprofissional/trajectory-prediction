@@ -4,12 +4,12 @@ import sys
 from pathlib import Path
 
 def setup_logger(name, log_file=None, level=logging.INFO):
-    """Configura um logger"""
+    """Configura um logger sem emojis para compatibilidade Windows"""
     
     logger = logging.getLogger(name)
     logger.setLevel(level)
     
-    # Formatação
+    # Formatação sem cores ou emojis
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
@@ -24,7 +24,7 @@ def setup_logger(name, log_file=None, level=logging.INFO):
     if log_file:
         # Certificar que o diretório existe
         log_file.parent.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(log_file)
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
     
@@ -32,17 +32,14 @@ def setup_logger(name, log_file=None, level=logging.INFO):
 
 def get_logger(name):
     """Retorna um logger configurado"""
-    # Usar caminho relativo para evitar problemas de import
+    # Usar caminho relativo
     project_root = Path(__file__).parent.parent
     
     # Criar diretório de logs se não existir
     logs_dir = project_root / "logs"
     
-    # Nome do arquivo de log (substituir pontos por underscores)
+    # Nome do arquivo de log
     log_filename = f"{name.replace('.', '_')}.log"
     log_file = logs_dir / log_filename
     
     return setup_logger(name, log_file)
-
-# Logger padrão para uso interno
-_default_logger = get_logger(__name__)

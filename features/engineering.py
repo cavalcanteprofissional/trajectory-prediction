@@ -4,14 +4,10 @@ import pandas as pd
 from math import radians, sin, cos, sqrt, atan2
 from pathlib import Path
 
-# NÃO inicialize logger aqui no nível do módulo
-# Isso causa erro se get_logger não estiver disponível
-
 class FeatureEngineer:
     """Classe para engenharia de features"""
     
     def __init__(self):
-        # Inicializar logger apenas quando a classe for instanciada
         self.logger = self._get_logger()
     
     def _get_logger(self):
@@ -20,7 +16,6 @@ class FeatureEngineer:
             from utils.logger import get_logger
             return get_logger(__name__)
         except ImportError:
-            # Fallback básico
             import logging
             logging.basicConfig(level=logging.INFO)
             return logging.getLogger(__name__)
@@ -44,8 +39,8 @@ class FeatureEngineer:
         """Extrai features básicas de uma trajetória"""
         features = {}
         
-        lat_list = row['path_lat_parsed']
-        lon_list = row['path_lon_parsed']
+        lat_list = row.get('path_lat_parsed', [])
+        lon_list = row.get('path_lon_parsed', [])
         
         if len(lat_list) < 2:
             return features
@@ -71,8 +66,8 @@ class FeatureEngineer:
         """Extrai features relacionadas a distâncias"""
         features = {}
         
-        lat_list = row['path_lat_parsed']
-        lon_list = row['path_lon_parsed']
+        lat_list = row.get('path_lat_parsed', [])
+        lon_list = row.get('path_lon_parsed', [])
         
         if len(lat_list) < 2:
             return features
@@ -109,8 +104,8 @@ class FeatureEngineer:
         """Extrai features geométricas"""
         features = {}
         
-        lat_list = row['path_lat_parsed']
-        lon_list = row['path_lon_parsed']
+        lat_list = row.get('path_lat_parsed', [])
+        lon_list = row.get('path_lon_parsed', [])
         
         if len(lat_list) < 2:
             return features
@@ -132,56 +127,42 @@ class FeatureEngineer:
         
         return features
     
-   # features/engineering.py - método extract_all_features corrigido
-def extract_all_features(self, df):
-    """Extrai todas as features para um DataFrame"""
-    # Verificar se já foi processado
-    if hasattr(df, '_features_extracted'):
-        self.logger.warning(f"Features já extraídas para DataFrame com {len(df)} linhas")
-        # Se já temos features extraídas, retornar cache
-        if hasattr(df, '_cached_features'):
-            return df._cached_features.copy()
-    
-    self.logger.info(f"Extraindo features de {len(df)} trajetórias...")
-    
-    features_list = []
-    
-    for idx, row in df.iterrows():
-        features = {}
+    def extract_all_features(self, df):
+        """Extrai todas as features para um DataFrame"""
+        self.logger.info(f"Extraindo features de {len(df)} trajetórias...")
         
-        # Combinar todas as features
-        features.update(self.extract_basic_features(row))
-        features.update(self.extract_distance_features(row))
-        features.update(self.extract_geometric_features(row))
+        features_list = []
         
-        # Features adicionais
-        lat_list = row.get('path_lat_parsed', [])
-        lon_list = row.get('path_lon_parsed', [])
-        
-        if len(lat_list) > 0:
-            features['num_points'] = len(lat_list)
-            if features.get('total_distance', 0) > 0:
-                features['density'] = len(lat_list) / features['total_distance']
-            else:
-                features['density'] = 0
+        for idx, row in df.iterrows():
+            features = {}
             
-            # Hash do user_id para usar como feature
-            features['user_id_hash'] = hash(row.get('user_id', 'unknown')) % 1000 if 'user_id' in row else 0
+            # Combinar todas as features
+            features.update(self.extract_basic_features(row))
+            features.update(self.extract_distance_features(row))
+            features.update(self.extract_geometric_features(row))
+            
+            # Features adicionais
+            lat_list = row.get('path_lat_parsed', [])
+            lon_list = row.get('path_lon_parsed', [])
+            
+            if len(lat_list) > 0:
+                features['num_points'] = len(lat_list)
+                if features.get('total_distance', 0) > 0:
+                    features['density'] = len(lat_list) / features['total_distance']
+                else:
+                    features['density'] = 0
+            
+            features_list.append(features)
         
-        features_list.append(features)
+        features_df = pd.DataFrame(features_list)
+        
+        # Preencher valores nulos
+        features_df = features_df.fillna(0)
+        
+        self.logger.info(f"Features extraídas: {features_df.shape}")
+        
+        return features_df
     
-    features_df = pd.DataFrame(features_list)
-    
-    # Preencher valores nulos
-    features_df = features_df.fillna(0)
-    
-    self.logger.info(f"Features extraídas: {features_df.shape}")
-    
-    # Cache para evitar reprocessamento
-    df._features_extracted = True
-    df._cached_features = features_df.copy()
-    
-    return features_df
     @staticmethod
     def prepare_features_for_training(train_features, test_features, target_cols=['dest_lat', 'dest_lon']):
         """Prepara features para treinamento"""
