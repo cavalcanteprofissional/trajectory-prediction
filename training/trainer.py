@@ -200,7 +200,7 @@ class ModelTrainer:
         """Treina o melhor modelo em todos os dados"""
         if self.best_model_info is None:
             self.logger.warning("Nenhum modelo treinado. Treinando RandomForest por padrão.")
-            from models.model_factory import ModelFactory
+            from models import ModelFactory
             factory = ModelFactory()
             model = factory.create_model('RandomForest')
             model_name = 'RandomForest'
@@ -211,7 +211,7 @@ class ModelTrainer:
             # Alguns modelos (como CatBoost) não podem ser reutilizados
             # Então criamos um novo com os mesmos parâmetros
             try:
-                from models.model_factory import ModelFactory
+                from models import ModelFactory
                 factory = ModelFactory()
                 model = factory.create_model(model_name)
             except:

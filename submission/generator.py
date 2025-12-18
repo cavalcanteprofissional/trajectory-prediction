@@ -22,7 +22,7 @@ class SubmissionGenerator:
     def _load_config(self):
         """Carrega configurações"""
         try:
-            from config.settings import config
+            from config import config
             self.config = config
             self.submissions_dir = Path(config.SUBMISSIONS_DIR)
         except ImportError:

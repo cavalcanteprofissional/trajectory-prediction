@@ -17,7 +17,7 @@ def initialize_project():
     sys.path.insert(0, str(ROOT_DIR))
     
     try:
-        from config.settings import config
+        from config import config
         print(f"Diretorio raiz: {config.ROOT_DIR}")
         print(f"Dados: {config.DATA_DIR}")
         print(f"Competicao: {config.KAGGLE_COMPETITION}")
@@ -150,7 +150,7 @@ def run_data_pipeline(logger, config, auto_submit=False):
         # 1. Carregar dados
         logger.info("\n1. CARREGANDO DADOS")
         
-        from data.loader import DataLoader
+        from data import DataLoader
         loader = DataLoader()
         
         # Verificar se dados existem
@@ -178,7 +178,7 @@ def run_data_pipeline(logger, config, auto_submit=False):
         # 2. Engenharia de features
         logger.info("\n2. ENGENHARIA DE FEATURES")
         
-        from features.engineering import FeatureEngineer
+        from features import FeatureEngineer
         feature_engineer = FeatureEngineer()
         
         train_features = feature_engineer.extract_all_features(train_data)
@@ -207,11 +207,11 @@ def run_data_pipeline(logger, config, auto_submit=False):
         # 4. Treinar modelo
         logger.info("\n4. TREINANDO MODELO")
 
-        from training.trainer import ModelTrainer
+        from training import ModelTrainer
         trainer = ModelTrainer()
 
         # Criar modelos com parâmetros otimizados
-        from models.model_factory import ModelFactory
+        from models import ModelFactory
         model_factory = ModelFactory(n_samples=len(prepared_data['X_train']))
 
         # Usar apenas modelos prioritários para velocidade
@@ -248,7 +248,7 @@ def run_data_pipeline(logger, config, auto_submit=False):
         # 6. Salvar submissão
         logger.info("\n6. SALVANDO SUBMISSAO")
         
-        from submission.generator import SubmissionGenerator
+        from submission import SubmissionGenerator
         submission_gen = SubmissionGenerator()
         
         submission_file = submission_gen.generate_submission(
@@ -371,6 +371,7 @@ def submit_only_mode(competition_name, message="", logger=None):
     log_func(f"📤 Enviando arquivo mais recente: {os.path.basename(latest_file)}")
     log_func(f"📝 Mensagem: {message}")
     
+    import logging
     return submit_to_kaggle_automatically(latest_file, "Último modelo", competition_name, 
                                          logger or logging.getLogger(__name__))
 
