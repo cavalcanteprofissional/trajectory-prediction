@@ -1,6 +1,9 @@
 # Dados
-data/
-!data/.gitkeep
+data/**
+!data/__init__.py
+!data/downloader.py
+!data/loader.py
+!data/
 
 # Submissões
 submissions/
