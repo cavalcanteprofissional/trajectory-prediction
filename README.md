@@ -568,8 +568,8 @@ Melhorias futuras planejadas:
 ---
 
 **Desenvolvido para a competição Tópicos Especiais em Aprendizado de Máquina - Kaggle**
-[Universidade Federal do Ceará (UFC)](https://www.ufc.br/)
-[Departamento de Computação (DC)](https://dc.ufc.br/pt/)
-[Capacitação Técnica e Empreendedora em IA (CTE-IA)](https://www.cteia.dc.ufc.br/)
+[Universidade Federal do Ceará (UFC)](https://www.ufc.br/)\
+[Departamento de Computação (DC)](https://dc.ufc.br/pt/)\
+[Capacitação Técnica e Empreendedora em IA (CTE-IA)](https://www.cteia.dc.ufc.br/)\
 
 *Última atualização: Dezembro 2025*
