@@ -75,7 +75,7 @@ trajectory_prediction_project/
 
 ```bash
 git clone <url-do-repositorio>
-cd trajectory_prediction_project
+cd trajectory_prediction
 ```
 
 ### 2. Crie um ambiente virtual (recomendado)

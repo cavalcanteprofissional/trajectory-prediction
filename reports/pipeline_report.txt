@@ -1,10 +1,11 @@
 Relatorio do Pipeline - te-aprendizado-de-maquina
 ==================================================
-Data: 2025-12-18 17:31:56.752294
+Data: 2025-12-18 22:26:30.020921
 Modelo final: RandomForest
-Amostras de treino: 12050
+Amostras de treino (apos remocao de outliers): 10351
 Amostras de teste: 3013
-Features: 25
-Arquivo de submissao: E:\KAGGLE\trajectory-prediction\submissions\submission_RandomForest_20251218_173156.csv
+Features: 33
+Outliers removidos: 83 (0.69%)
+Arquivo de submissao: E:\KAGGLE\trajectory-prediction\submissions\submission_RandomForest_20251218_222630.csv
 Submissao enviada: NAO
-Melhor erro na validacao: 25.0584 km
+Melhor erro na validacao: 400.3949 km

@@ -93,12 +93,12 @@ class ModelFactory:
         # Parâmetros específicos para cada modelo
         model_params = {}
         
-        # Random Forest
+        # Random Forest - Otimizado para reduzir erro
         model_params['RandomForest'] = {
-            'n_estimators': n_estimators,
-            'max_depth': None if self.n_samples and self.n_samples > 5000 else 15,
-            'min_samples_split': 5,
-            'min_samples_leaf': 2,
+            'n_estimators': max(n_estimators, 200),  # Mais árvores para melhor performance
+            'max_depth': 20,  # Profundidade limitada para evitar overfitting
+            'min_samples_split': 10,  # Aumentado para reduzir overfitting
+            'min_samples_leaf': 4,  # Aumentado para reduzir overfitting
             'max_features': 'sqrt' if n_features and n_features > 10 else None,
             'bootstrap': True,
             'oob_score': True,
@@ -106,43 +106,44 @@ class ModelFactory:
             'n_jobs': -1
         }
         
-        # XGBoost
+        # XGBoost - Otimizado para reduzir erro
         model_params['XGBoost'] = {
-            'n_estimators': n_estimators,
-            'max_depth': 6,
-            'learning_rate': 0.1,
-            'subsample': 0.8,
-            'colsample_bytree': 0.8,
-            'reg_alpha': 0.1,  # L1 regularization
-            'reg_lambda': 1.0,  # L2 regularization
-            'gamma': 0,
+            'n_estimators': max(n_estimators, 200),
+            'max_depth': 7,  # Aumentado para capturar mais complexidade
+            'learning_rate': 0.05,  # Reduzido para melhor generalização
+            'subsample': 0.85,
+            'colsample_bytree': 0.85,
+            'reg_alpha': 0.5,  # Aumentado para regularização
+            'reg_lambda': 1.5,  # Aumentado para regularização
+            'gamma': 0.1,  # Adicionado para regularização
+            'min_child_weight': 3,  # Adicionado para regularização
             'random_state': self.DEFAULT_SEED,
             'n_jobs': -1
         }
         
-        # LightGBM
+        # LightGBM - Otimizado para reduzir erro
         model_params['LightGBM'] = {
-            'n_estimators': n_estimators,
-            'max_depth': -1,  # Sem limite
-            'learning_rate': 0.1,
-            'num_leaves': 31,
-            'subsample': 0.8,
-            'colsample_bytree': 0.8,
-            'reg_alpha': 0.1,
-            'reg_lambda': 0.1,
-            'min_child_samples': 20,
+            'n_estimators': max(n_estimators, 200),
+            'max_depth': 8,  # Limitado para evitar overfitting
+            'learning_rate': 0.05,  # Reduzido para melhor generalização
+            'num_leaves': 50,  # Aumentado mas controlado
+            'subsample': 0.85,
+            'colsample_bytree': 0.85,
+            'reg_alpha': 0.5,  # Aumentado
+            'reg_lambda': 0.5,  # Aumentado
+            'min_child_samples': 30,  # Aumentado para regularização
             'random_state': self.DEFAULT_SEED,
             'n_jobs': -1
         }
         
-        # Gradient Boosting (scikit-learn)
+        # Gradient Boosting (scikit-learn) - Otimizado
         model_params['GradientBoosting'] = {
-            'n_estimators': n_estimators,
-            'learning_rate': 0.1,
-            'max_depth': 3,
-            'min_samples_split': 5,
-            'min_samples_leaf': 2,
-            'subsample': 0.8,
+            'n_estimators': max(n_estimators, 200),
+            'learning_rate': 0.05,  # Reduzido
+            'max_depth': 5,  # Aumentado
+            'min_samples_split': 10,  # Aumentado
+            'min_samples_leaf': 4,  # Aumentado
+            'subsample': 0.85,
             'max_features': None,
             'random_state': self.DEFAULT_SEED
             # Nota: GradientBoostingRegressor não tem parâmetro 'bootstrap'
@@ -323,9 +324,9 @@ class ModelFactory:
             model = self._create_model_safe(model_name, default_params)
         
         # Criar modelo multi-output para prever latitude e longitude
-        # Exceto para modelos que já suportam multi-output
-        if model_name in ['RandomForest', 'XGBoost', 'LightGBM', 'ExtraTrees', 
-                         'GradientBoosting', 'HistGradientBoosting', 'CatBoost']:
+        # Apenas RandomForest, XGBoost, ExtraTrees e CatBoost suportam multi-output nativamente
+        # LightGBM, GradientBoosting e HistGradientBoosting precisam de wrapper
+        if model_name in ['RandomForest', 'XGBoost', 'ExtraTrees', 'CatBoost']:
             # Esses modelos já suportam multi-output nativamente
             pass
         else:
@@ -420,6 +421,7 @@ class ModelFactory:
         """Cria um modelo ensemble"""
         try:
             from sklearn.ensemble import VotingRegressor
+            from sklearn.multioutput import MultiOutputRegressor
             
             if base_models is None:
                 # Modelos base para ensemble
@@ -429,7 +431,9 @@ class ModelFactory:
                     ('lgb', self.create_model('LightGBM'))
                 ]
             
-            ensemble = VotingRegressor(estimators=base_models)
+            # VotingRegressor não suporta multi-output diretamente
+            voting_regressor = VotingRegressor(estimators=base_models)
+            ensemble = MultiOutputRegressor(voting_regressor)
             ensemble.model_name = 'EnsembleVoting'
             return ensemble
             
@@ -499,10 +503,16 @@ class ModelFactory:
         # Adicionar modelos ensemble se solicitado
         if include_ensemble and len(models) >= 2:
             try:
+                from sklearn.ensemble import VotingRegressor
+                from sklearn.multioutput import MultiOutputRegressor
+                
                 # Usar os modelos já criados como base
                 base_models = [(name, model) for name, model in list(models.items())[:3]]
                 
-                ensemble = VotingRegressor(estimators=base_models)
+                # VotingRegressor não suporta multi-output diretamente
+                # Precisa envolver em MultiOutputRegressor
+                voting_regressor = VotingRegressor(estimators=base_models)
+                ensemble = MultiOutputRegressor(voting_regressor)
                 ensemble.model_name = 'EnsembleVoting'
                 models['EnsembleVoting'] = ensemble
                 self.logger.info("✅ Modelo criado: EnsembleVoting")

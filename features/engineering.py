@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from math import radians, sin, cos, sqrt, atan2
 from pathlib import Path
+import math
 
 class FeatureEngineer:
     """Classe para engenharia de features"""
@@ -151,6 +152,62 @@ class FeatureEngineer:
                     features['density'] = len(lat_list) / features['total_distance']
                 else:
                     features['density'] = 0
+                
+                # NOVAS FEATURES PARA MELHORAR PREDIÇÃO
+                # Direção média (bearing) do início ao fim
+                if len(lat_list) >= 2:
+                    start_lat, start_lon = lat_list[0], lon_list[0]
+                    end_lat, end_lon = lat_list[-1], lon_list[-1]
+                    
+                    # Calcular bearing (direção)
+                    lat1, lon1 = radians(start_lat), radians(start_lon)
+                    lat2, lon2 = radians(end_lat), radians(end_lon)
+                    dlon = lon2 - lon1
+                    
+                    y = sin(dlon) * cos(lat2)
+                    x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dlon)
+                    bearing = atan2(y, x)
+                    bearing_degrees = (bearing * 180 / 3.14159) % 360
+                    
+                    features['bearing'] = bearing_degrees
+                    features['bearing_sin'] = sin(bearing)
+                    features['bearing_cos'] = cos(bearing)
+                
+                # Velocidade estimada (assumindo 1 segundo entre pontos)
+                if features.get('total_distance', 0) > 0 and len(lat_list) > 1:
+                    # Velocidade média em m/s
+                    time_seconds = len(lat_list) - 1  # Assumindo 1 segundo entre pontos
+                    features['avg_speed_ms'] = features['total_distance'] / time_seconds if time_seconds > 0 else 0
+                    features['avg_speed_kmh'] = features['avg_speed_ms'] * 3.6
+                
+                # Features de direção e mudança de direção
+                if len(lat_list) >= 3:
+                    # Calcular mudanças de direção
+                    bearings = []
+                    for i in range(1, len(lat_list)):
+                        lat1, lon1 = radians(lat_list[i-1]), radians(lon_list[i-1])
+                        lat2, lon2 = radians(lat_list[i]), radians(lon_list[i])
+                        dlon = lon2 - lon1
+                        
+                        y = sin(dlon) * cos(lat2)
+                        x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dlon)
+                        bearing = atan2(y, x)
+                        bearings.append(bearing)
+                    
+                    if bearings:
+                        # Variabilidade de direção (quanto mais variável, mais curvas)
+                        bearing_changes = [abs(bearings[i] - bearings[i-1]) for i in range(1, len(bearings))]
+                        features['direction_variance'] = np.std(bearings) if len(bearings) > 1 else 0
+                        features['avg_direction_change'] = np.mean(bearing_changes) if bearing_changes else 0
+                
+                # Distância do último ponto ao destino (se disponível)
+                if 'dest_lat' in row and 'dest_lon' in row and not pd.isna(row['dest_lat']):
+                    last_lat, last_lon = lat_list[-1], lon_list[-1]
+                    dest_lat, dest_lon = row['dest_lat'], row['dest_lon']
+                    remaining_distance = self.haversine_distance(last_lat, last_lon, dest_lat, dest_lon)
+                    features['remaining_distance'] = remaining_distance
+                else:
+                    features['remaining_distance'] = 0
             
             features_list.append(features)
         
@@ -158,6 +215,9 @@ class FeatureEngineer:
         
         # Preencher valores nulos
         features_df = features_df.fillna(0)
+        
+        # Substituir infinitos por 0
+        features_df = features_df.replace([np.inf, -np.inf], 0)
         
         self.logger.info(f"Features extraídas: {features_df.shape}")
         
