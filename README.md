@@ -155,32 +155,63 @@ pip install kaggle
 kaggle configure
 ```
 
+### 5. Configure as variáveis de ambiente
+
+O projeto inclui um arquivo `.env.example` como template. Copie e configure:
+
+```bash
+# Windows
+copy .env.example .env
+
+# Linux/Mac
+cp .env.example .env
+```
+
+Depois, edite o arquivo `.env` e preencha suas credenciais do Kaggle.
+
 ## ⚙️ Configuração
 
 ### Variáveis de Ambiente
 
-Crie um arquivo `.env` na raiz do projeto com as seguintes variáveis:
+O projeto usa um arquivo `.env` para armazenar configurações sensíveis. Siga estes passos:
+
+1. **Copie o template**:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Edite o arquivo `.env`** e preencha com suas credenciais:
 
 ```env
 # Seed para reprodutibilidade
 SEED=42
 
 # Credenciais Kaggle (obtenha em https://www.kaggle.com/account)
-KAGGLE_USERNAME=seu_usuario
-KAGGLE_KEY=sua_chave_api
+KAGGLE_USERNAME=seu_usuario_kaggle
+KAGGLE_KEY=sua_chave_api_kaggle
 
 # Nome da competição
-KAGGLE_COMPETITION=te-aprendizado-de-maquina
+KAGGLE_COMPETITION=topicos-especiais-em-aprendizado-de-maquina-v2
 
 # Diretório de dados (opcional)
 DATA_DIR=data
+
+# Links externos (opcional, para fallback)
+DATA_DOWNLOAD_URL=
+ALTERNATIVE_DATA_URL=
 ```
+
+**⚠️ IMPORTANTE:**
+- O arquivo `.env` está no `.gitignore` e **NÃO será commitado** (contém dados sensíveis)
+- O arquivo `.env.example` é um template seguro que **pode ser commitado** (sem credenciais reais)
+- **NUNCA** commite o arquivo `.env` com credenciais reais no Git
+- O nome da competição padrão é `topicos-especiais-em-aprendizado-de-maquina-v2`
 
 **Como obter credenciais do Kaggle:**
 1. Acesse https://www.kaggle.com/account
 2. Vá em "API" → "Create New API Token"
 3. Baixe o arquivo `kaggle.json`
-4. Use `username` e `key` do arquivo JSON
+4. Use `username` e `key` do arquivo JSON e preencha no `.env`
 
 ## 🚀 Uso
 
@@ -498,7 +529,7 @@ Os logs são salvos em `logs/` e incluem:
 
 ```
 ============================================================
-TRAJECTORY PREDICTION - te-aprendizado-de-maquina
+TRAJECTORY PREDICTION - topicos-especiais-em-aprendizado-de-maquina-v2
 ============================================================
 
 1. CARREGANDO DADOS

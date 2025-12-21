@@ -50,3 +50,5 @@ Thumbs.db
 # Credenciais
 .env
 .kaggle/kaggle.json
+
+# NOTA: .env.example pode ser commitado (é um template seguro)

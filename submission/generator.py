@@ -27,9 +27,13 @@ class SubmissionGenerator:
             self.submissions_dir = Path(config.SUBMISSIONS_DIR)
         except ImportError:
             # Fallback
+            import os
+            from dotenv import load_dotenv
+            load_dotenv()
+            
             self.submissions_dir = Path(__file__).parent.parent / 'submissions'
             self.config = type('Config', (), {
-                'KAGGLE_COMPETITION': 'te-aprendizado-de-maquina'
+                'KAGGLE_COMPETITION': os.getenv('KAGGLE_COMPETITION', 'topicos-especiais-em-aprendizado-de-maquina-v2')
             })()
         
         # Garantir que o diretório existe

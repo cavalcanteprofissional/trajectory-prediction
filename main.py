@@ -40,7 +40,7 @@ def initialize_project():
             'DATA_DIR': ROOT_DIR / 'data',
             'LOGS_DIR': ROOT_DIR / 'logs',
             'SUBMISSIONS_DIR': ROOT_DIR / 'submissions',
-            'KAGGLE_COMPETITION': 'te-aprendizado-de-maquina'
+            'KAGGLE_COMPETITION': os.getenv('KAGGLE_COMPETITION', 'topicos-especiais-em-aprendizado-de-maquina-v2')
         })()
 
 def setup_logging():

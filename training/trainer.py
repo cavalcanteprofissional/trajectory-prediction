@@ -130,8 +130,8 @@ class ModelTrainer:
         
         validator = CrossValidator(n_splits=cv_folds, random_state=42, shuffle=True)
         results = validator.validate_multiple_models(models, X, y, verbose=True)
-        
-        # Atualizar melhor modelo
+                
+                # Atualizar melhor modelo
         if results:
             best_name = min(results.keys(), key=lambda k: results[k]['mean_error'])
             self.best_model_info = results[best_name]

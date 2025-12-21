@@ -193,7 +193,7 @@ class OutlierDetector:
             problematic_ratio = (large_jumps + extreme_speeds) / total_segments if total_segments > 0 else 0
             
             if problematic_ratio > 0.3:
-                outliers[idx] = True
+                    outliers[idx] = True
         
         return outliers
     
