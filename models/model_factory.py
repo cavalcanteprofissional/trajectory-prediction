@@ -560,6 +560,59 @@ class ModelFactory:
         
         return model_info.get(model_name, {'description': 'Modelo não documentado'})
 
+    def tune_with_optuna(self, model_name: str, X, y, n_trials: int = 20, cv_folds: int = 3, groups=None, y_unit='degrees'):
+        """Rotina simples de tuning com Optuna para LightGBM/XGBoost.
+
+        Retorna: melhores parâmetros e estudo (se optuna estiver disponível).
+        """
+        try:
+            import optuna
+        except ImportError:
+            self.logger.warning("Optuna não instalado. Instale com `pip install optuna` para usar tuning.")
+            return None
+
+        from . import model_factory as mf  # evitar conflitos
+        from training.cross_validation import CrossValidator
+
+        def objective(trial):
+            if model_name == 'LightGBM':
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+                    'learning_rate': trial.suggest_loguniform('learning_rate', 0.01, 0.2),
+                    'num_leaves': trial.suggest_int('num_leaves', 16, 128),
+                    'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+                    'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+                }
+                model = LGBMRegressor(**params)
+            elif model_name == 'XGBoost':
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+                    'learning_rate': trial.suggest_loguniform('learning_rate', 0.01, 0.2),
+                    'max_depth': trial.suggest_int('max_depth', 3, 10),
+                    'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+                    'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+                }
+                model = XGBRegressor(**params)
+            else:
+                raise ValueError('Optuna tuning only supported for LightGBM and XGBoost in this helper')
+
+            # envolver em MultiOutput se necessário
+            try:
+                from sklearn.multioutput import MultiOutputRegressor
+                model = MultiOutputRegressor(model)
+            except Exception:
+                pass
+
+            validator = CrossValidator(n_splits=cv_folds, random_state=42, shuffle=True)
+            res = validator.cross_validate(model, X, y, model_name=model_name, verbose=False, groups=groups, y_unit=y_unit)
+            return res['mean_error']
+
+        study = optuna.create_study(direction='minimize')
+        study.optimize(objective, n_trials=n_trials)
+
+        self.logger.info(f"Optuna best value: {study.best_value}, params: {study.best_params}")
+        return {'study': study, 'best_params': study.best_params, 'best_value': study.best_value}
+
 # Teste da classe
 if __name__ == "__main__":
     factory = ModelFactory(n_samples=1000)

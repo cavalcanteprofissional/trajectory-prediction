@@ -1,6 +1,7 @@
 # training/trainer.py
 import numpy as np
 from sklearn.metrics import mean_squared_error, mean_absolute_error
+from typing import Optional, List
 import time
 import logging
 import math
@@ -122,23 +123,30 @@ class ModelTrainer:
         
         return result
     
-    def train_all_models(self, X, y, models, cv_folds=10):
-        """Treina todos os modelos usando validação cruzada"""
-        
-        # Usar CrossValidator para validar múltiplos modelos
+    def train_all_models(self, X, y, models, cv_folds=10, groups: Optional[np.ndarray] = None, y_unit: str = 'degrees'):
+        """Treina todos os modelos usando validação cruzada
+
+        Args:
+            X: Features de treino
+            y: Targets de treino
+            models: dict de modelos {name: model}
+            cv_folds: número de folds
+            groups: array opcional de grupos para GroupKFold
+            y_unit: 'degrees' ou 'meters' - indica unidade dos alvos
+        """
+
         from .cross_validation import CrossValidator
-        
+
         validator = CrossValidator(n_splits=cv_folds, random_state=42, shuffle=True)
-        results = validator.validate_multiple_models(models, X, y, verbose=True)
-                
-                # Atualizar melhor modelo
+        results = validator.validate_multiple_models(models, X, y, verbose=True, groups=groups, y_unit=y_unit)
+
+        # Atualizar melhor modelo
         if results:
             best_name = min(results.keys(), key=lambda k: results[k]['mean_error'])
             self.best_model_info = results[best_name]
             self.logger.info(f"🏆 Melhor modelo: {best_name} ({self.best_model_info['mean_error']:.4f} km)")
-        
+
         self.results = results
-        
         return results
     
     def train_final_model(self, X, y):

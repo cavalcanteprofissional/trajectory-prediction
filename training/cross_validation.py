@@ -4,7 +4,7 @@ Módulo para validação cruzada com métrica Haversine customizada
 """
 import numpy as np
 import time
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, GroupKFold
 from typing import Dict, List, Tuple, Optional, Any
 import logging
 
@@ -75,7 +75,9 @@ class CrossValidator:
         X: np.ndarray,
         y: np.ndarray,
         model_name: Optional[str] = None,
-        verbose: bool = True
+        verbose: bool = True,
+        groups: Optional[np.ndarray] = None,
+        y_unit: str = 'degrees'  # 'degrees' (lat/lon) or 'meters' (dx,dy)
     ) -> Dict[str, Any]:
         """
         Executa validação cruzada com métrica Haversine
@@ -105,13 +107,20 @@ class CrossValidator:
         if verbose:
             self.logger.info(f"Treinando {model_name} com {self.n_splits}-fold CV")
         
-        # Criar KFold
-        kf = KFold(n_splits=self.n_splits, shuffle=self.shuffle, random_state=self.random_state)
+        # Escolher estratégia de split: GroupKFold se groups fornecidos
+        if groups is not None:
+            if len(groups) != len(X):
+                raise ValueError("Length of groups must match number of samples")
+            kf = GroupKFold(n_splits=self.n_splits)
+            splitter = kf.split(X, groups=groups)
+        else:
+            kf = KFold(n_splits=self.n_splits, shuffle=self.shuffle, random_state=self.random_state)
+            splitter = kf.split(X)
         
         fold_scores = []
         fold_times = []
         
-        for fold, (train_idx, val_idx) in enumerate(kf.split(X), 1):
+        for fold, (train_idx, val_idx) in enumerate(splitter, 1):
             start_time = time.time()
             
             # Dividir dados
@@ -128,8 +137,15 @@ class CrossValidator:
             # Fazer predições
             y_pred = model_copy.predict(X_val)
             
-            # Calcular erro (distância Haversine)
-            error = self.haversine_distance_vectorized(y_val, y_pred)
+            # Calcular erro: se targets estiverem em metros, usar euclidiana convertida para km
+            if y_unit == 'meters':
+                # y are dx,dy in meters -> compute Euclidean distance in meters -> convert to km
+                d2 = np.sum((y_val - y_pred) ** 2, axis=1)
+                d_m = np.sqrt(d2)
+                error = np.mean(d_m) / 1000.0
+            else:
+                # degrees (lat/lon): use haversine
+                error = self.haversine_distance_vectorized(y_val, y_pred)
             fold_time = time.time() - start_time
             
             fold_scores.append(error)
@@ -193,7 +209,9 @@ class CrossValidator:
         models: Dict[str, Any],
         X: np.ndarray,
         y: np.ndarray,
-        verbose: bool = True
+        verbose: bool = True,
+        groups: Optional[np.ndarray] = None,
+        y_unit: str = 'degrees'
     ) -> Dict[str, Dict[str, Any]]:
         """
         Valida múltiplos modelos com validação cruzada
@@ -216,8 +234,7 @@ class CrossValidator:
             try:
                 if verbose:
                     self.logger.info(f"--- {name} ---")
-                
-                result = self.cross_validate(model, X, y, model_name=name, verbose=verbose)
+                result = self.cross_validate(model, X, y, model_name=name, verbose=verbose, groups=groups, y_unit=y_unit)
                 results[name] = result
                 
             except Exception as e:

@@ -336,11 +336,14 @@ def run_data_pipeline(logger, config, auto_submit=False):
         logger.info("⚠️  TEST.CSV será usado APENAS para predições finais")
         
         # Treinar com validação cruzada (10 folds) - APENAS train.csv
+        groups = prepared_data.get('groups', None)
         results = trainer.train_all_models(
             prepared_data['X_train'],  # APENAS train.csv
             prepared_data['y_train'],   # APENAS train.csv
             models,
-            cv_folds=10
+            cv_folds=10,
+            groups=groups,
+            y_unit='degrees'
         )
         
         # Treinar modelo final
@@ -370,7 +373,8 @@ def run_data_pipeline(logger, config, auto_submit=False):
             test_ids=test_data['trajectory_id'].values,
             predictions=predictions,
             model_name=final_model_info['model_name'],
-            description=f"Modelo {final_model_info['model_name']} - {config.KAGGLE_COMPETITION}"
+            description=f"Modelo {final_model_info['model_name']} - {config.KAGGLE_COMPETITION}",
+            test_df=test_data
         )
         
         logger.info(f"Submissao salva: {submission_file}")
