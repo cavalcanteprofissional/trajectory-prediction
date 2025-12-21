@@ -180,21 +180,21 @@ def run_data_pipeline(logger, config, auto_submit=False):
         
         from features import OutlierDetector
         outlier_detector = OutlierDetector(
-            max_jump_distance_km=500.0,  # Aumentado: permite gaps GPS maiores, viagens longas
-            max_speed_kmh=800.0,  # Aumentado: permite trens rápidos, aviões
-            contamination=0.05,  # Reduzido: mais conservador (5% vs 10%)
-            use_isolation_forest=True,
-            use_geographic_bounds=False,  # Desabilitado para não ser muito restritivo
-            max_outlier_percentage=0.20  # Reduzido: não remover mais que 20% dos dados (vs 50%)
+            max_jump_distance_km=1000.0,  # Aumentado ainda mais: permite gaps maiores
+            max_speed_kmh=1500.0,  # Aumentado: permite aviões supersônicos
+            contamination=0.01,  # Muito conservador: apenas 1%
+            use_isolation_forest=False,  # Desabilitado: muito agressivo
+            use_geographic_bounds=False,  # Desabilitado: pode remover destinos válidos
+            max_outlier_percentage=0.05  # Muito conservador: máximo 5%
         )
         
-        # Detectar outliers nos dados originais
+        # Detectar outliers nos dados originais - APENAS coordenadas inválidas
         train_outliers_dict = outlier_detector.detect_all_outliers(
             train_data,
-            use_geographic=True,  # Apenas detecta coordenadas inválidas, não limites regionais
-            use_trajectory=True,
-            use_target=True,
-            use_features=False  # Vamos detectar nas features depois
+            use_geographic=True,  # APENAS coordenadas inválidas
+            use_trajectory=False,  # DESABILITADO: pode remover trajetórias válidas
+            use_target=True,  # Manter: apenas coordenadas inválidas no target
+            use_features=False  # DESABILITADO: muito agressivo
         )
         
         # Combinar outliers (qualquer tipo de outlier)
@@ -217,24 +217,21 @@ def run_data_pipeline(logger, config, auto_submit=False):
         # Remover outliers do conjunto de treino
         n_before = len(train_data)
         
-        # Proteção adicional: não remover todos os dados
+        # Proteção adicional: NÃO remover dados se for mais que 2%
         outlier_percentage = train_outliers_combined.sum() / len(train_data) if len(train_data) > 0 else 0
         
-        if train_outliers_combined.sum() == len(train_data) or outlier_percentage > 0.50:
+        if outlier_percentage > 0.02:  # Apenas 2% máximo
             logger.warning(f"⚠️  {outlier_percentage*100:.1f}% dos dados foram marcados como outliers!")
-            logger.warning("   Aplicando proteção: removendo apenas outliers mais extremos...")
+            logger.warning("   Aplicando proteção: removendo apenas coordenadas geográficas inválidas...")
             
             # Usar apenas outliers geográficos (coordenadas inválidas) - mais confiáveis
             safe_outliers = pd.Series(False, index=train_data.index)
             if 'geographic' in train_outliers_dict:
                 safe_outliers = safe_outliers | train_outliers_dict['geographic']
             
-            # Adicionar apenas outliers de trajetória muito extremos (múltiplos problemas)
-            if 'trajectory' in train_outliers_dict:
-                # Usar apenas se não for muito (limitar a 10% dos dados)
-                trajectory_outliers = train_outliers_dict['trajectory']
-                if trajectory_outliers.sum() / len(train_data) <= 0.10:
-                    safe_outliers = safe_outliers | trajectory_outliers
+            # Adicionar apenas outliers de target (coordenadas inválidas)
+            if 'target' in train_outliers_dict:
+                safe_outliers = safe_outliers | train_outliers_dict['target']
             
             train_outliers_combined = safe_outliers
             logger.info(f"   • Outliers seguros detectados: {safe_outliers.sum()} ({safe_outliers.sum()/len(train_data)*100:.1f}%)")
@@ -283,43 +280,19 @@ def run_data_pipeline(logger, config, auto_submit=False):
                 train_features = train_features.loc[common_indices]
                 train_data = train_data.loc[common_indices]
             
-            feature_outliers_dict = outlier_detector.detect_all_outliers(
-                train_data,
-                features_df=train_features,
-                use_geographic=False,
-                use_trajectory=False,
-                use_target=False,
-                use_features=True
-            )
+            # DESABILITADO: Detecção de outliers nas features pode remover dados importantes
+            # feature_outliers_dict = outlier_detector.detect_all_outliers(
+            #     train_data,
+            #     features_df=train_features,
+            #     use_geographic=False,
+            #     use_trajectory=False,
+            #     use_target=False,
+            #     use_features=True
+            # )
             
-            # Combinar outliers de features
-            if feature_outliers_dict:
-                feature_outliers_combined = outlier_detector.get_combined_outliers(
-                    feature_outliers_dict, method='any'
-                )
-                
-                # Remover outliers de features
-                n_before_features = len(train_features)
-                train_features_clean = outlier_detector.remove_outliers(
-                    train_features, feature_outliers_combined, inplace=False
-                )
-                
-                # Usar os mesmos índices para remover do train_data
-                train_data_clean_features = outlier_detector.remove_outliers(
-                    train_data, feature_outliers_combined, inplace=False
-                )
-                n_after_features = len(train_features_clean)
-                
-                logger.info(f"   • Outliers nas features removidos: {n_before_features - n_after_features}")
-                
-                # Verificação: garantir que há dados suficientes
-                if n_after_features > 0:
-                    train_features = train_features_clean
-                    train_data = train_data_clean_features
-                else:
-                    logger.warning("   ⚠️  Remoção de outliers nas features resultou em 0 amostras, mantendo dados originais")
-        else:
-            logger.warning("   ⚠️  Nenhuma feature disponível para detecção de outliers")
+            # NÃO remover outliers de features - manter todos os dados
+            logger.info("   ℹ️  Detecção de outliers nas features DESABILITADA (muito agressiva)")
+            feature_outliers_combined = pd.Series(False, index=train_features.index)
         
         # Garantir que dest_lat e dest_lon estão nas features após remoção
         if 'dest_lat' in train_data.columns:

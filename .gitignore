@@ -8,8 +8,9 @@ data/**
 # Submissões
 submissions/
 
-# Logs
+# Logs e Reports
 logs/
+reports/
 
 # Ambiente virtual
 venv/

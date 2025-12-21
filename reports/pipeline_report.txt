@@ -1,11 +1,11 @@
 Relatorio do Pipeline - topicos-especiais-em-aprendizado-de-maquina-v2
 ==================================================
-Data: 2025-12-21 14:53:16.641956
-Modelo final: RandomForest
-Amostras de treino (apos remocao de outliers): 10351
+Data: 2025-12-21 15:51:56.223000
+Modelo final: GradientBoosting
+Amostras de treino (apos remocao de outliers): 12050
 Amostras de teste: 3013
 Features: 33
-Outliers removidos: 83 (0.69%)
-Arquivo de submissao: E:\KAGGLE\trajectory-prediction\submissions\submission_RandomForest_20251221_145316.csv
+Outliers removidos: 0 (0.00%)
+Arquivo de submissao: E:\KAGGLE\trajectory-prediction\submissions\submission_GradientBoosting_20251221_155156.csv
 Submissao enviada: NAO
-Melhor erro na validacao: 400.3949 km
+Melhor erro na validacao: 18.3199 km
