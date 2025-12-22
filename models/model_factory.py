@@ -62,9 +62,11 @@ class ModelFactory:
     
     DEFAULT_SEED = 42
     
-    def __init__(self, n_samples=None):
+    def __init__(self, n_samples=None, lgbm_force_col_wise: bool = True):
         self.logger = self._get_logger()
         self.n_samples = n_samples
+        # Recomenda-se forçar col-wise para reduzir warnings em alguns datasets
+        self.lgbm_force_col_wise = lgbm_force_col_wise
     
     def _get_logger(self):
         """Obtém logger"""
@@ -122,16 +124,23 @@ class ModelFactory:
         }
         
         # LightGBM - Otimizado para reduzir erro
+        # LightGBM - Otimizado para reduzir erro e evitar warnings
         model_params['LightGBM'] = {
             'n_estimators': max(n_estimators, 200),
-            'max_depth': 8,  # Limitado para evitar overfitting
-            'learning_rate': 0.05,  # Reduzido para melhor generalização
-            'num_leaves': 50,  # Aumentado mas controlado
+            'max_depth': 8,
+            'learning_rate': 0.05,
+            # num_leaves controlado para evitar splits sem ganho
+            'num_leaves': 31,
             'subsample': 0.85,
             'colsample_bytree': 0.85,
-            'reg_alpha': 0.5,  # Aumentado
-            'reg_lambda': 0.5,  # Aumentado
-            'min_child_samples': 30,  # Aumentado para regularização
+            'reg_alpha': 0.5,
+            'reg_lambda': 0.5,
+            # Aumentar min_child_samples reduz overfitting e evita mensagens de ganho -inf
+            'min_child_samples': 100,
+            # Forçar col-wise para estabilidade em determinados formatos de dados
+            'force_col_wise': True if getattr(self, 'lgbm_force_col_wise', True) else False,
+            # reduzir mensagens verbosas internas
+            'verbosity': -1,
             'random_state': self.DEFAULT_SEED,
             'n_jobs': -1
         }
@@ -351,7 +360,7 @@ class ModelFactory:
                        'random_state', 'n_jobs'],
             'LightGBM': ['n_estimators', 'max_depth', 'learning_rate', 'num_leaves',
                         'subsample', 'colsample_bytree', 'reg_alpha', 'reg_lambda',
-                        'min_child_samples', 'random_state', 'n_jobs'],
+                        'min_child_samples', 'force_col_wise', 'random_state', 'n_jobs'],
             'GradientBoosting': ['n_estimators', 'learning_rate', 'max_depth',
                                 'min_samples_split', 'min_samples_leaf', 'subsample',
                                 'max_features', 'random_state'],
@@ -431,8 +440,19 @@ class ModelFactory:
                     ('lgb', self.create_model('LightGBM'))
                 ]
             
+            # Garantir que os estimadores passados ao VotingRegressor sejam
+            # single-output (desembrulhar MultiOutputRegressor se necessário)
+            unwrapped = []
+            for name, est in base_models:
+                if hasattr(est, 'estimator'):
+                    # estimador foi envolvido por MultiOutputRegressor
+                    base_est = est.estimator
+                else:
+                    base_est = est
+                unwrapped.append((name, base_est))
+
             # VotingRegressor não suporta multi-output diretamente
-            voting_regressor = VotingRegressor(estimators=base_models)
+            voting_regressor = VotingRegressor(estimators=unwrapped)
             ensemble = MultiOutputRegressor(voting_regressor)
             ensemble.model_name = 'EnsembleVoting'
             return ensemble
@@ -507,8 +527,15 @@ class ModelFactory:
                 from sklearn.multioutput import MultiOutputRegressor
                 
                 # Usar os modelos já criados como base
-                base_models = [(name, model) for name, model in list(models.items())[:3]]
-                
+                base_models = []
+                for name, model in list(models.items())[:3]:
+                    # Se o modelo for um MultiOutputRegressor, desembrulhar o estimador
+                    if hasattr(model, 'estimator'):
+                        base_est = model.estimator
+                    else:
+                        base_est = model
+                    base_models.append((name, base_est))
+
                 # VotingRegressor não suporta multi-output diretamente
                 # Precisa envolver em MultiOutputRegressor
                 voting_regressor = VotingRegressor(estimators=base_models)

@@ -12,6 +12,9 @@ submissions/
 logs/
 reports/
 
+# Scripts gerados
+scripts/
+
 # Ambiente virtual
 venv/
 env/

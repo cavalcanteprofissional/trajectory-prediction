@@ -10,6 +10,7 @@ import numpy as np
 import subprocess
 import os
 import argparse
+import json
 
 def initialize_project():
     """Inicializa o projeto"""
@@ -259,8 +260,17 @@ def run_data_pipeline(logger, config, auto_submit=False):
         
         from features import FeatureEngineer
         feature_engineer = FeatureEngineer()
+
+        # Aplicar augmentação leve para robustez (jitter + rotações pequenas)
+        try:
+            from features.augmentation import augment_dataframe
+            logger.info("Aplicando augmentacao leve ao conjunto de treino (p=0.25)")
+            train_data_aug = augment_dataframe(train_data, methods=['jitter', 'rotate'], p=0.25, seed=42)
+        except Exception as e:
+            logger.warning(f"Augmentation não disponível: {e}")
+            train_data_aug = train_data
         
-        train_features = feature_engineer.extract_all_features(train_data)
+        train_features = feature_engineer.extract_all_features(train_data_aug)
         test_features = feature_engineer.extract_all_features(test_data)
         
         if 'dest_lat' in train_data.columns:
@@ -302,8 +312,9 @@ def run_data_pipeline(logger, config, auto_submit=False):
         # 4. Preparar dados para treinamento
         logger.info("\n4. PREPARANDO DADOS")
         
+        # Preparar dados para treinamento com RobustScaler (mais resistente a outliers)
         prepared_data = feature_engineer.prepare_features_for_training(
-            train_features, test_features
+            train_features, test_features, scaler_type='robust'
         )
         
         logger.info(f"Dados preparados:")
@@ -329,6 +340,24 @@ def run_data_pipeline(logger, config, auto_submit=False):
             include_ensemble=True,  # Inclui ensemble
             n_features=prepared_data['X_train'].shape[1]
         )
+
+        # Se existirem resultados do Optuna, aplicar os melhores parâmetros aos modelos correspondentes
+        optuna_file = Path('reports') / 'optuna_short_results.json'
+        if optuna_file.exists():
+            try:
+                with open(optuna_file, 'r', encoding='utf-8') as f:
+                    optuna_res = json.load(f)
+
+                for model_name, info in optuna_res.items():
+                    best_params = info.get('best_params')
+                    if best_params and model_name in models:
+                        logger.info(f"Aplicando params Optuna em {model_name}: {best_params}")
+                        try:
+                            models[model_name] = model_factory.create_model(model_name, params=best_params, n_features=prepared_data['X_train'].shape[1])
+                        except Exception as e:
+                            logger.warning(f"Falha ao criar {model_name} com params optuna: {e}")
+            except Exception as e:
+                logger.warning(f"Não foi possível ler optuna_short_results.json: {e}")
 
         # IMPORTANTE: Validação cruzada usa APENAS dados de treino (train.csv)
         # O test.csv é usado APENAS para predições finais, nunca para treino ou validação

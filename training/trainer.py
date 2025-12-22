@@ -172,8 +172,12 @@ class ModelTrainer:
         
         self.logger.info(f"Treinando modelo final: {model_name} em {len(X)} amostras")
         
+        # Garantir ndarray consistente para evitar warnings de feature names
+        X_arr = np.asarray(X)
+        y_arr = np.asarray(y)
+
         start_time = time.time()
-        model.fit(X, y)
+        model.fit(X_arr, y_arr)
         train_time = time.time() - start_time
         
         self.logger.info(f"Modelo final treinado em {train_time:.2f}s")

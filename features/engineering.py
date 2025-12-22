@@ -295,8 +295,50 @@ class FeatureEngineer:
         # Separar features e target (remover trajectory_id se presente)
         feature_cols = [col for col in train_features.columns if col not in target_cols + ['trajectory_id']]
 
-        X_train = train_features[feature_cols].values
-        X_test = test_features[feature_cols].values
+        # Trabalhar em cópias para evitar modificar os DataFrames originais
+        df_train = train_features[feature_cols].copy()
+        df_test = test_features[feature_cols].copy()
+
+        # Detectar e remover features constantes (pouca variância) e quase-constantes
+        const_cols = []
+        low_var_cols = []
+        n_samples = len(df_train)
+        for col in df_train.columns:
+            try:
+                nunq = df_train[col].nunique(dropna=True)
+                if nunq <= 1:
+                    const_cols.append(col)
+                    continue
+
+                # proporção de valores únicos muito pequena -> quase-constante
+                if nunq / max(1, n_samples) < 0.02:
+                    low_var_cols.append(col)
+                    continue
+
+                # checar std para tipos numéricos
+                if pd.api.types.is_numeric_dtype(df_train[col]):
+                    if float(df_train[col].std()) <= 1e-8:
+                        const_cols.append(col)
+            except Exception:
+                continue
+
+        drop_cols = list(set(const_cols + low_var_cols))
+
+        if drop_cols:
+            try:
+                from utils.logger import get_logger
+                get_logger(__name__).info(f"Removendo {len(drop_cols)} features com baixa variancia: {drop_cols}")
+            except Exception:
+                pass
+
+            df_train.drop(columns=drop_cols, inplace=True, errors='ignore')
+            df_test.drop(columns=drop_cols, inplace=True, errors='ignore')
+
+            # Atualizar lista de colunas
+            feature_cols = [c for c in feature_cols if c not in drop_cols]
+
+        X_train = df_train.values
+        X_test = df_test.values
 
         # Preparar y_train
         if use_local_target and all(c in train_features.columns for c in ['start_lat', 'start_lon']):

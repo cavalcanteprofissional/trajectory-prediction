@@ -131,11 +131,21 @@ class CrossValidator:
             # (alguns modelos não podem ser reutilizados)
             model_copy = self._clone_model(model)
             
+            # Garantir que X está no formato ndarray para evitar warnings de feature names
+            X_train = np.asarray(X_train)
+            X_val = np.asarray(X_val)
+
             # Treinar modelo
-            model_copy.fit(X_train, y_train)
+            import warnings as _warnings
+            with _warnings.catch_warnings():
+                # Ignorar avisos de incompatibilidade de nomes de features do sklearn/LightGBM
+                _warnings.filterwarnings("ignore", message="X does not have valid feature names")
+                model_copy.fit(X_train, y_train)
             
-            # Fazer predições
-            y_pred = model_copy.predict(X_val)
+            # Fazer predições (usar ndarray consistente)
+            with _warnings.catch_warnings():
+                _warnings.filterwarnings("ignore", message="X does not have valid feature names")
+                y_pred = model_copy.predict(X_val)
             
             # Calcular erro: se targets estiverem em metros, usar euclidiana convertida para km
             if y_unit == 'meters':
