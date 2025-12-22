@@ -69,6 +69,17 @@ class CrossValidator:
         
         return np.mean(distances)
     
+    @staticmethod
+    def _local_xy_to_latlon(lat_ref, lon_ref, dx, dy):
+        """Converte coordenadas locais (m) de volta para lat/lon (graus)."""
+        R = 6371000.0
+        lat0 = np.radians(lat_ref)
+        lon0 = np.radians(lon_ref)
+
+        lat = lat0 + dy / R
+        lon = lon0 + dx / (R * np.cos((lat + lat0) / 2.0))
+        return np.degrees(lat), np.degrees(lon)
+    
     def cross_validate(
         self,
         model: Any,
@@ -77,7 +88,9 @@ class CrossValidator:
         model_name: Optional[str] = None,
         verbose: bool = True,
         groups: Optional[np.ndarray] = None,
-        y_unit: str = 'degrees'  # 'degrees' (lat/lon) or 'meters' (dx,dy)
+        y_unit: str = 'degrees',  # 'degrees' (lat/lon) or 'meters' (dx,dy)
+        refs_lat: Optional[np.ndarray] = None,
+        refs_lon: Optional[np.ndarray] = None
     ) -> Dict[str, Any]:
         """
         Executa validação cruzada com métrica Haversine
@@ -147,15 +160,29 @@ class CrossValidator:
                 _warnings.filterwarnings("ignore", message="X does not have valid feature names")
                 y_pred = model_copy.predict(X_val)
             
-            # Calcular erro: se targets estiverem em metros, usar euclidiana convertida para km
-            if y_unit == 'meters':
-                # y are dx,dy in meters -> compute Euclidean distance in meters -> convert to km
-                d2 = np.sum((y_val - y_pred) ** 2, axis=1)
-                d_m = np.sqrt(d2)
-                error = np.mean(d_m) / 1000.0
-            else:
-                # degrees (lat/lon): use haversine
-                error = self.haversine_distance_vectorized(y_val, y_pred)
+            # Se y_unit for 'meters', converter dx,dy de volta para lat/lon
+            if y_unit == 'meters' and refs_lat is not None and refs_lon is not None:
+                refs_val_lat = refs_lat[val_idx]
+                refs_val_lon = refs_lon[val_idx]
+                
+                y_val_latlon = []
+                y_pred_latlon = []
+                
+                for i in range(len(y_val)):
+                    lat_true, lon_true = self._local_xy_to_latlon(
+                        refs_val_lat[i], refs_val_lon[i], y_val[i, 0], y_val[i, 1]
+                    )
+                    lat_pred, lon_pred = self._local_xy_to_latlon(
+                        refs_val_lat[i], refs_val_lon[i], y_pred[i, 0], y_pred[i, 1]
+                    )
+                    y_val_latlon.append([lat_true, lon_true])
+                    y_pred_latlon.append([lat_pred, lon_pred])
+                
+                y_val = np.array(y_val_latlon)
+                y_pred = np.array(y_pred_latlon)
+            
+            # Calcular erro com Haversine (sempre em lat/lon após conversão)
+            error = self.haversine_distance_vectorized(y_val, y_pred)
             fold_time = time.time() - start_time
             
             fold_scores.append(error)
@@ -221,7 +248,9 @@ class CrossValidator:
         y: np.ndarray,
         verbose: bool = True,
         groups: Optional[np.ndarray] = None,
-        y_unit: str = 'degrees'
+        y_unit: str = 'degrees',
+        refs_lat: Optional[np.ndarray] = None,
+        refs_lon: Optional[np.ndarray] = None
     ) -> Dict[str, Dict[str, Any]]:
         """
         Valida múltiplos modelos com validação cruzada
@@ -244,7 +273,7 @@ class CrossValidator:
             try:
                 if verbose:
                     self.logger.info(f"--- {name} ---")
-                result = self.cross_validate(model, X, y, model_name=name, verbose=verbose, groups=groups, y_unit=y_unit)
+                result = self.cross_validate(model, X, y, model_name=name, verbose=verbose, groups=groups, y_unit=y_unit, refs_lat=refs_lat, refs_lon=refs_lon)
                 results[name] = result
                 
             except Exception as e:

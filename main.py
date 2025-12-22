@@ -325,8 +325,12 @@ def run_data_pipeline(logger, config, auto_submit=False):
         
         # Preparar dados para treinamento com RobustScaler (mais resistente a outliers)
         prepared_data = feature_engineer.prepare_features_for_training(
-            train_features, test_features, scaler_type='robust'
+            train_features, test_features, scaler_type='robust', use_local_target=True
         )
+        
+        # Armazenar pontos de referência para conversão de volta (se usando coordenadas locais)
+        test_starts_lat = test_features['start_lat'].values if 'start_lat' in test_features.columns else None
+        test_starts_lon = test_features['start_lon'].values if 'start_lon' in test_features.columns else None
         
         logger.info(f"Dados preparados:")
         logger.info(f"   • X_train: {prepared_data['X_train'].shape}")
@@ -377,13 +381,18 @@ def run_data_pipeline(logger, config, auto_submit=False):
         
         # Treinar com validação cruzada (10 folds) - APENAS train.csv
         groups = prepared_data.get('groups', None)
+        y_unit = 'meters' if test_starts_lat is not None else 'degrees'
+        refs_lat = train_features['start_lat'].values if y_unit == 'meters' else None
+        refs_lon = train_features['start_lon'].values if y_unit == 'meters' else None
         results = trainer.train_all_models(
             prepared_data['X_train'],  # APENAS train.csv
             prepared_data['y_train'],   # APENAS train.csv
             models,
             cv_folds=10,
             groups=groups,
-            y_unit='degrees'
+            y_unit=y_unit,
+            refs_lat=refs_lat,
+            refs_lon=refs_lon
         )
         
         # Treinar modelo final
@@ -400,6 +409,19 @@ def run_data_pipeline(logger, config, auto_submit=False):
         
         final_model = final_model_info['model']
         predictions = final_model.predict(prepared_data['X_test'])  # APENAS test.csv para predições
+        
+        # Se usando coordenadas locais, converter de volta para lat/lon
+        if test_starts_lat is not None and test_starts_lon is not None:
+            logger.info("Convertendo predições de coordenadas locais para lat/lon...")
+            dest_lats = []
+            dest_lons = []
+            for i in range(len(predictions)):
+                lat, lon = FeatureEngineer.local_xy_to_latlon(
+                    test_starts_lat[i], test_starts_lon[i], predictions[i, 0], predictions[i, 1]
+                )
+                dest_lats.append(lat)
+                dest_lons.append(lon)
+            predictions = np.column_stack([dest_lats, dest_lons])
         
         logger.info(f"{len(predictions)} predicoes geradas")
         

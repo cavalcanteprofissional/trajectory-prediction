@@ -123,7 +123,7 @@ class ModelTrainer:
         
         return result
     
-    def train_all_models(self, X, y, models, cv_folds=10, groups: Optional[np.ndarray] = None, y_unit: str = 'degrees'):
+    def train_all_models(self, X, y, models, cv_folds=10, groups: Optional[np.ndarray] = None, y_unit: str = 'degrees', refs_lat: Optional[np.ndarray] = None, refs_lon: Optional[np.ndarray] = None):
         """Treina todos os modelos usando validação cruzada
 
         Args:
@@ -138,7 +138,7 @@ class ModelTrainer:
         from .cross_validation import CrossValidator
 
         validator = CrossValidator(n_splits=cv_folds, random_state=42, shuffle=True)
-        results = validator.validate_multiple_models(models, X, y, verbose=True, groups=groups, y_unit=y_unit)
+        results = validator.validate_multiple_models(models, X, y, verbose=True, groups=groups, y_unit=y_unit, refs_lat=refs_lat, refs_lon=refs_lon)
 
         # Atualizar melhor modelo
         if results:

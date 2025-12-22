@@ -231,6 +231,47 @@ class FeatureEngineer:
                     features['seg_mean'] = float(np.mean(seg))
                     features['seg_std'] = float(np.std(seg))
 
+                # NOVAS FEATURES: Percentis dos bearings
+                if bearings:
+                    bearings_deg = np.array(bearings) * 180 / math.pi % 360
+                    features['bearing_p10'] = float(np.percentile(bearings_deg, 10))
+                    features['bearing_p50'] = float(np.percentile(bearings_deg, 50))
+                    features['bearing_p90'] = float(np.percentile(bearings_deg, 90))
+
+                # NOVAS FEATURES: Percentis das velocidades
+                if speeds:
+                    features['speed_p10'] = float(np.percentile(speeds, 10))
+                    features['speed_p50'] = float(np.percentile(speeds, 50))
+                    features['speed_p90'] = float(np.percentile(speeds, 90))
+
+                # NOVAS FEATURES: Percentis das acelerações
+                if len(speeds) > 1:
+                    accs = np.diff(speeds)
+                    features['acc_p10'] = float(np.percentile(accs, 10))
+                    features['acc_p50'] = float(np.percentile(accs, 50))
+                    features['acc_p90'] = float(np.percentile(accs, 90))
+
+                # NOVAS FEATURES: Total turning angle
+                if bearing_changes:
+                    features['total_turning_angle'] = float(np.sum(bearing_changes) * 180 / math.pi)
+
+                # NOVAS FEATURES: Number of significant turns (>30 degrees)
+                if bearing_changes:
+                    significant_turns = sum(1 for change in bearing_changes if change * 180 / math.pi > 30)
+                    features['n_significant_turns'] = significant_turns
+
+                # NOVAS FEATURES: Bearing of last segment
+                if bearings:
+                    features['last_bearing'] = float(bearings[-1] * 180 / math.pi % 360)
+
+                # NOVAS FEATURES: Speed of last segment
+                if speeds:
+                    features['last_speed'] = float(speeds[-1])
+
+                # NOVAS FEATURES: Last direction change
+                if bearing_changes:
+                    features['last_direction_change'] = float(bearing_changes[-1] * 180 / math.pi) if bearing_changes else 0.0
+
                 # Distância do último ponto ao destino (se disponível)
                 if 'dest_lat' in row and 'dest_lon' in row and not pd.isna(row['dest_lat']):
                     last_lat, last_lon = lat_list[-1], lon_list[-1]
