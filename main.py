@@ -177,7 +177,18 @@ def run_data_pipeline(logger, config, auto_submit=False):
             logger.info(f"   Destino: ({train_data.iloc[0]['dest_lat']:.6f}, {train_data.iloc[0]['dest_lon']:.6f})")
         
         # 2. Detecção de outliers
-        logger.info("\n2. DETECCAO DE OUTLIERS")
+        # 2a. Limpeza inicial de dados inconsistentes / faltantes
+        logger.info("\n2. LIMPEZA INICIAL DE DADOS (tratamento e filtragem)")
+        try:
+            from features.cleaning import clean_train_test
+            logger.info("Aplicando limpeza conservadora nos dados (remover duplicatas, coerção numérica, coordenadas impossíveis, linhas sem destino)")
+            train_data, test_data = clean_train_test(train_data, test_data)
+            logger.info(f"   • Train após limpeza: {len(train_data)} amostras")
+            logger.info(f"   • Test após limpeza: {len(test_data)} amostras")
+        except Exception as e:
+            logger.warning(f"Falha na etapa de limpeza inicial: {e}")
+
+        logger.info("\n2b. DETECCAO DE OUTLIERS")
         
         from features import OutlierDetector
         outlier_detector = OutlierDetector(
@@ -543,6 +554,8 @@ Exemplos de uso:
                        help='Executa pipeline completo e envia submissão para Kaggle')
     parser.add_argument('--submit-only', action='store_true',
                        help='Apenas envia o último arquivo de submissão (não executa pipeline)')
+    parser.add_argument('--cv-folds', type=int, default=10,
+                       help='Número de folds para validação cruzada (default: 10)')
     parser.add_argument('-m', '--message', type=str, default='',
                        help='Mensagem customizada para submissão Kaggle')
     parser.add_argument('--model', type=str, default='',
