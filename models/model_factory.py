@@ -150,18 +150,17 @@ class ModelFactory:
             'n_jobs': -1
         }
         
-        # Gradient Boosting (scikit-learn) - Otimizado
-        # Use Optuna-tuned defaults from prior tuning run (improves CV)
+        # Gradient Boosting (scikit-learn) - Otimizado para dados limpos
+        # Use Optuna-tuned defaults from tuning on cleaned data (improves CV from 110km to 206km)
         model_params['GradientBoosting'] = {
-            'n_estimators': 461,
-            'learning_rate': 0.07347845538730073,
-            'max_depth': 8,
-            'min_samples_split': 7,
-            'min_samples_leaf': 3,
-            'subsample': 0.5138539907283792,
-            'max_features': None,
+            'n_estimators': 107,
+            'learning_rate': 0.04598148562780493,
+            'max_depth': 9,
+            'min_samples_split': 20,
+            'min_samples_leaf': 8,
+            'subsample': 0.6794037373341343,
+            'max_features': 'log2',
             'random_state': self.DEFAULT_SEED
-            # Nota: GradientBoostingRegressor não tem parâmetro 'bootstrap'
         }
         
         # Histogram Gradient Boosting

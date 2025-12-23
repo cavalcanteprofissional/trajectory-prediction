@@ -190,23 +190,27 @@ def run_data_pipeline(logger, config, auto_submit=False):
 
         logger.info("\n2b. DETECCAO DE OUTLIERS")
         
+        # Ajustar limites geográficos para China e proximidades
         from features import OutlierDetector
+        OutlierDetector.VALID_LAT_RANGE = (18.0, 54.0)  # Latitude da China: ~18° a 54° N
+        OutlierDetector.VALID_LON_RANGE = (73.0, 135.0)  # Longitude da China: ~73° a 135° E
+        
         outlier_detector = OutlierDetector(
-            max_jump_distance_km=1000.0,  # Aumentado ainda mais: permite gaps maiores
-            max_speed_kmh=1500.0,  # Aumentado: permite aviões supersônicos
-            contamination=0.01,  # Muito conservador: apenas 1%
-            use_isolation_forest=False,  # Desabilitado: muito agressivo
-            use_geographic_bounds=False,  # Desabilitado: pode remover destinos válidos
-            max_outlier_percentage=0.05  # Muito conservador: máximo 5%
+            max_jump_distance_km=200.0,  # Reduzido: saltos >200km são suspeitos
+            max_speed_kmh=500.0,  # Reduzido: velocidades >500km/h são improváveis
+            contamination=0.02,  # Aumentado ligeiramente: 2%
+            use_isolation_forest=False,  # Manter desabilitado
+            use_geographic_bounds=False,  # Manter desabilitado
+            max_outlier_percentage=0.10  # Aumentado: máximo 10%
         )
         
-        # Detectar outliers nos dados originais - APENAS coordenadas inválidas
+        # Detectar outliers nos dados originais
         train_outliers_dict = outlier_detector.detect_all_outliers(
             train_data,
-            use_geographic=True,  # APENAS coordenadas inválidas
-            use_trajectory=False,  # DESABILITADO: pode remover trajetórias válidas
-            use_target=True,  # Manter: apenas coordenadas inválidas no target
-            use_features=False  # DESABILITADO: muito agressivo
+            use_geographic=True,  # Coordenadas inválidas
+            use_trajectory=True,  # HABILITADO: trajetórias com saltos grandes
+            use_target=True,  # Coordenadas inválidas no target
+            use_features=False  # Manter desabilitado por enquanto
         )
         
         # Combinar outliers (qualquer tipo de outlier)

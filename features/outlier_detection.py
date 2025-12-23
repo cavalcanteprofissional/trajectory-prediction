@@ -188,11 +188,11 @@ class OutlierDetector:
                 if speed_kmh > self.max_speed_kmh:
                     extreme_speeds += 1
             
-            # Marcar como outlier apenas se mais de 30% dos segmentos forem problemáticos
-            # Isso evita marcar trajetórias com um único gap GPS como outliers
+            # Marcar como outlier se mais de 10% dos segmentos forem problemáticos
+            # (reduzido de 30% para ser mais agressivo na detecção)
             problematic_ratio = (large_jumps + extreme_speeds) / total_segments if total_segments > 0 else 0
             
-            if problematic_ratio > 0.3:
+            if problematic_ratio > 0.1:
                     outliers[idx] = True
         
         return outliers

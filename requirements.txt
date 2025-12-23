@@ -22,6 +22,8 @@ python-dotenv>=1.0.0
 optuna
 
 # Outras dependências
+folium
+geopy
 requirements_scanner
 setuptools
 tomli
