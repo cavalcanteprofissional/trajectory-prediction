@@ -11,6 +11,10 @@ submissions/
 # Logs
 logs/
 
+# Reports
+reports/*
+!reports/pipeline_report.txt
+
 # Ambiente virtual
 venv/
 env/
