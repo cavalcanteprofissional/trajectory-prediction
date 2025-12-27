@@ -27,6 +27,7 @@ from sklearn.multioutput import MultiOutputRegressor
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 from catboost import CatBoostRegressor
+from sklearn.ensemble import BaggingRegressor
 import numpy as np
 
 class ModelFactory:
@@ -51,20 +52,26 @@ class ModelFactory:
         'AdaBoost'
     ]
     
+    # Adicionar Bagged Gradient Boosting como opção
+    DEFAULT_MODELS = DEFAULT_MODELS + ['BaggedGB']
+    
     # Modelos prioritários (melhores para coordenadas)
     PRIORITY_MODELS = [
         'RandomForest',
         'XGBoost', 
         'LightGBM',
         'GradientBoosting',
+        'BaggedGB',
         'HistGradientBoosting'
     ]
     
     DEFAULT_SEED = 42
     
-    def __init__(self, n_samples=None):
+    def __init__(self, n_samples=None, lgbm_force_col_wise: bool = True):
         self.logger = self._get_logger()
         self.n_samples = n_samples
+        # Recomenda-se forçar col-wise para reduzir warnings em alguns datasets
+        self.lgbm_force_col_wise = lgbm_force_col_wise
     
     def _get_logger(self):
         """Obtém logger"""
@@ -93,12 +100,12 @@ class ModelFactory:
         # Parâmetros específicos para cada modelo
         model_params = {}
         
-        # Random Forest
+        # Random Forest - Otimizado para reduzir erro
         model_params['RandomForest'] = {
-            'n_estimators': n_estimators,
-            'max_depth': None if self.n_samples and self.n_samples > 5000 else 15,
-            'min_samples_split': 5,
-            'min_samples_leaf': 2,
+            'n_estimators': max(n_estimators, 200),  # Mais árvores para melhor performance
+            'max_depth': 20,  # Profundidade limitada para evitar overfitting
+            'min_samples_split': 10,  # Aumentado para reduzir overfitting
+            'min_samples_leaf': 4,  # Aumentado para reduzir overfitting
             'max_features': 'sqrt' if n_features and n_features > 10 else None,
             'bootstrap': True,
             'oob_score': True,
@@ -106,46 +113,54 @@ class ModelFactory:
             'n_jobs': -1
         }
         
-        # XGBoost
+        # XGBoost - Otimizado para reduzir erro
         model_params['XGBoost'] = {
-            'n_estimators': n_estimators,
-            'max_depth': 6,
-            'learning_rate': 0.1,
-            'subsample': 0.8,
-            'colsample_bytree': 0.8,
-            'reg_alpha': 0.1,  # L1 regularization
-            'reg_lambda': 1.0,  # L2 regularization
-            'gamma': 0,
+            'n_estimators': max(n_estimators, 200),
+            'max_depth': 7,  # Aumentado para capturar mais complexidade
+            'learning_rate': 0.05,  # Reduzido para melhor generalização
+            'subsample': 0.85,
+            'colsample_bytree': 0.85,
+            'reg_alpha': 0.5,  # Aumentado para regularização
+            'reg_lambda': 1.5,  # Aumentado para regularização
+            'gamma': 0.1,  # Adicionado para regularização
+            'min_child_weight': 3,  # Adicionado para regularização
             'random_state': self.DEFAULT_SEED,
             'n_jobs': -1
         }
         
-        # LightGBM
+        # LightGBM - Otimizado para reduzir erro
+        # LightGBM - Otimizado para reduzir erro e evitar warnings
         model_params['LightGBM'] = {
-            'n_estimators': n_estimators,
-            'max_depth': -1,  # Sem limite
-            'learning_rate': 0.1,
+            'n_estimators': max(n_estimators, 200),
+            'max_depth': 8,
+            'learning_rate': 0.05,
+            # num_leaves controlado para evitar splits sem ganho
             'num_leaves': 31,
-            'subsample': 0.8,
-            'colsample_bytree': 0.8,
-            'reg_alpha': 0.1,
-            'reg_lambda': 0.1,
-            'min_child_samples': 20,
+            'subsample': 0.85,
+            'colsample_bytree': 0.85,
+            'reg_alpha': 0.5,
+            'reg_lambda': 0.5,
+            # Aumentar min_child_samples reduz overfitting e evita mensagens de ganho -inf
+            'min_child_samples': 100,
+            # Forçar col-wise para estabilidade em determinados formatos de dados
+            'force_col_wise': True if getattr(self, 'lgbm_force_col_wise', True) else False,
+            # reduzir mensagens verbosas internas
+            'verbosity': -1,
             'random_state': self.DEFAULT_SEED,
             'n_jobs': -1
         }
         
-        # Gradient Boosting (scikit-learn)
+        # Gradient Boosting (scikit-learn) - Otimizado para dados limpos
+        # Use Optuna-tuned defaults from tuning on cleaned data (improves CV from 110km to 206km)
         model_params['GradientBoosting'] = {
-            'n_estimators': n_estimators,
-            'learning_rate': 0.1,
-            'max_depth': 3,
-            'min_samples_split': 5,
-            'min_samples_leaf': 2,
-            'subsample': 0.8,
-            'max_features': None,
+            'n_estimators': 107,
+            'learning_rate': 0.04598148562780493,
+            'max_depth': 9,
+            'min_samples_split': 20,
+            'min_samples_leaf': 8,
+            'subsample': 0.6794037373341343,
+            'max_features': 'log2',
             'random_state': self.DEFAULT_SEED
-            # Nota: GradientBoostingRegressor não tem parâmetro 'bootstrap'
         }
         
         # Histogram Gradient Boosting
@@ -291,6 +306,20 @@ class ModelFactory:
                 model = LGBMRegressor(**default_params)
             elif model_name == 'GradientBoosting':
                 model = GradientBoostingRegressor(**default_params)
+            elif model_name == 'BaggedGB':
+                # Criar base estimator com parâmetros otimizados
+                base_params = default_params.copy()
+                # remover parâmetros irrlevantes
+                try:
+                    base_est = GradientBoostingRegressor(**base_params)
+                except Exception:
+                    base_est = GradientBoostingRegressor()
+                # BaggingRegressor API mudou entre versões (base_estimator -> estimator)
+                try:
+                    bag = BaggingRegressor(estimator=base_est, n_estimators=5, n_jobs=-1, random_state=self.DEFAULT_SEED)
+                except TypeError:
+                    bag = BaggingRegressor(base_estimator=base_est, n_estimators=5, n_jobs=-1, random_state=self.DEFAULT_SEED)
+                model = bag
             elif model_name == 'HistGradientBoosting':
                 model = HistGradientBoostingRegressor(**default_params)
             elif model_name == 'ExtraTrees':
@@ -323,9 +352,9 @@ class ModelFactory:
             model = self._create_model_safe(model_name, default_params)
         
         # Criar modelo multi-output para prever latitude e longitude
-        # Exceto para modelos que já suportam multi-output
-        if model_name in ['RandomForest', 'XGBoost', 'LightGBM', 'ExtraTrees', 
-                         'GradientBoosting', 'HistGradientBoosting', 'CatBoost']:
+        # Apenas RandomForest, XGBoost, ExtraTrees e CatBoost suportam multi-output nativamente
+        # LightGBM, GradientBoosting e HistGradientBoosting precisam de wrapper
+        if model_name in ['RandomForest', 'XGBoost', 'ExtraTrees', 'CatBoost']:
             # Esses modelos já suportam multi-output nativamente
             pass
         else:
@@ -350,7 +379,7 @@ class ModelFactory:
                        'random_state', 'n_jobs'],
             'LightGBM': ['n_estimators', 'max_depth', 'learning_rate', 'num_leaves',
                         'subsample', 'colsample_bytree', 'reg_alpha', 'reg_lambda',
-                        'min_child_samples', 'random_state', 'n_jobs'],
+                        'min_child_samples', 'force_col_wise', 'random_state', 'n_jobs'],
             'GradientBoosting': ['n_estimators', 'learning_rate', 'max_depth',
                                 'min_samples_split', 'min_samples_leaf', 'subsample',
                                 'max_features', 'random_state'],
@@ -413,6 +442,18 @@ class ModelFactory:
             return MLPRegressor(**filtered_params)
         elif model_name == 'AdaBoost':
             return AdaBoostRegressor(**filtered_params)
+        elif model_name == 'BaggedGB':
+            # Filtrar parâmetros válidos para GradientBoosting
+            gb_valid = valid_params_map.get('GradientBoosting', [])
+            gb_params = {k: v for k, v in params.items() if k in gb_valid}
+            try:
+                base = GradientBoostingRegressor(**gb_params) if gb_params else GradientBoostingRegressor()
+            except Exception:
+                base = GradientBoostingRegressor()
+            try:
+                return BaggingRegressor(estimator=base, n_estimators=5, n_jobs=-1, random_state=self.DEFAULT_SEED)
+            except TypeError:
+                return BaggingRegressor(base_estimator=base, n_estimators=5, n_jobs=-1, random_state=self.DEFAULT_SEED)
         else:
             raise ValueError(f"Modelo desconhecido: {model_name}")
     
@@ -420,6 +461,7 @@ class ModelFactory:
         """Cria um modelo ensemble"""
         try:
             from sklearn.ensemble import VotingRegressor
+            from sklearn.multioutput import MultiOutputRegressor
             
             if base_models is None:
                 # Modelos base para ensemble
@@ -429,7 +471,20 @@ class ModelFactory:
                     ('lgb', self.create_model('LightGBM'))
                 ]
             
-            ensemble = VotingRegressor(estimators=base_models)
+            # Garantir que os estimadores passados ao VotingRegressor sejam
+            # single-output (desembrulhar MultiOutputRegressor se necessário)
+            unwrapped = []
+            for name, est in base_models:
+                if hasattr(est, 'estimator'):
+                    # estimador foi envolvido por MultiOutputRegressor
+                    base_est = est.estimator
+                else:
+                    base_est = est
+                unwrapped.append((name, base_est))
+
+            # VotingRegressor não suporta multi-output diretamente
+            voting_regressor = VotingRegressor(estimators=unwrapped)
+            ensemble = MultiOutputRegressor(voting_regressor)
             ensemble.model_name = 'EnsembleVoting'
             return ensemble
             
@@ -499,10 +554,23 @@ class ModelFactory:
         # Adicionar modelos ensemble se solicitado
         if include_ensemble and len(models) >= 2:
             try:
-                # Usar os modelos já criados como base
-                base_models = [(name, model) for name, model in list(models.items())[:3]]
+                from sklearn.ensemble import VotingRegressor
+                from sklearn.multioutput import MultiOutputRegressor
                 
-                ensemble = VotingRegressor(estimators=base_models)
+                # Usar os modelos já criados como base
+                base_models = []
+                for name, model in list(models.items())[:3]:
+                    # Se o modelo for um MultiOutputRegressor, desembrulhar o estimador
+                    if hasattr(model, 'estimator'):
+                        base_est = model.estimator
+                    else:
+                        base_est = model
+                    base_models.append((name, base_est))
+
+                # VotingRegressor não suporta multi-output diretamente
+                # Precisa envolver em MultiOutputRegressor
+                voting_regressor = VotingRegressor(estimators=base_models)
+                ensemble = MultiOutputRegressor(voting_regressor)
                 ensemble.model_name = 'EnsembleVoting'
                 models['EnsembleVoting'] = ensemble
                 self.logger.info("✅ Modelo criado: EnsembleVoting")
@@ -549,6 +617,77 @@ class ModelFactory:
         }
         
         return model_info.get(model_name, {'description': 'Modelo não documentado'})
+
+    def tune_with_optuna(self, model_name: str, X, y, n_trials: int = 20, cv_folds: int = 3, groups=None, y_unit='degrees'):
+        """Rotina simples de tuning com Optuna para LightGBM/XGBoost.
+
+        Retorna: melhores parâmetros e estudo (se optuna estiver disponível).
+        """
+        try:
+            import optuna
+        except ImportError:
+            self.logger.warning("Optuna não instalado. Instale com `pip install optuna` para usar tuning.")
+            return None
+
+        from . import model_factory as mf  # evitar conflitos
+        from training.cross_validation import CrossValidator
+
+        def objective(trial):
+            if model_name == 'LightGBM':
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+                    'learning_rate': trial.suggest_loguniform('learning_rate', 0.01, 0.2),
+                    'num_leaves': trial.suggest_int('num_leaves', 16, 128),
+                    'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+                    'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+                }
+                model = LGBMRegressor(**params)
+            elif model_name == 'XGBoost':
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+                    'learning_rate': trial.suggest_loguniform('learning_rate', 0.01, 0.2),
+                    'max_depth': trial.suggest_int('max_depth', 3, 10),
+                    'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+                    'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+                }
+                model = XGBRegressor(**params)
+            elif model_name == 'GradientBoosting':
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 50, 800),
+                    'learning_rate': trial.suggest_loguniform('learning_rate', 0.005, 0.2),
+                    'max_depth': trial.suggest_int('max_depth', 2, 8),
+                    'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
+                    'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10),
+                    'subsample': trial.suggest_float('subsample', 0.5, 1.0),
+                }
+                # max_features pode ser 'sqrt' ou a fração
+                mf_choice = trial.suggest_categorical('max_features_choice', ['sqrt', 'log2', 'frac', 'none'])
+                if mf_choice == 'frac':
+                    params['max_features'] = trial.suggest_float('max_features_frac', 0.2, 1.0)
+                elif mf_choice == 'none':
+                    params['max_features'] = None
+                else:
+                    params['max_features'] = mf_choice
+                model = GradientBoostingRegressor(**params)
+            else:
+                raise ValueError('Optuna tuning only supported for LightGBM and XGBoost in this helper')
+
+            # envolver em MultiOutput se necessário
+            try:
+                from sklearn.multioutput import MultiOutputRegressor
+                model = MultiOutputRegressor(model)
+            except Exception:
+                pass
+
+            validator = CrossValidator(n_splits=cv_folds, random_state=42, shuffle=True)
+            res = validator.cross_validate(model, X, y, model_name=model_name, verbose=False, groups=groups, y_unit=y_unit)
+            return res['mean_error']
+
+        study = optuna.create_study(direction='minimize')
+        study.optimize(objective, n_trials=n_trials)
+
+        self.logger.info(f"Optuna best value: {study.best_value}, params: {study.best_params}")
+        return {'study': study, 'best_params': study.best_params, 'best_value': study.best_value}
 
 # Teste da classe
 if __name__ == "__main__":

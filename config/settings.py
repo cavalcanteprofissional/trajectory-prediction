@@ -12,12 +12,18 @@ class Config:
     # Seeds para reprodutibilidade
     SEED = int(os.getenv('SEED', 42))
     
-    # Credenciais Kaggle
+    # Credenciais Kaggle (do arquivo .env)
     KAGGLE_USERNAME = os.getenv('KAGGLE_USERNAME')
     KAGGLE_KEY = os.getenv('KAGGLE_KEY')
-    KAGGLE_COMPETITION = os.getenv('KAGGLE_COMPETITION', 'te-aprendizado-de-maquina')
+    KAGGLE_COMPETITION = os.getenv('KAGGLE_COMPETITION', 'topicos-especiais-em-aprendizado-de-maquina-v2')
+    
+    # Comando de download (construído dinamicamente)
     KAGGLE_DOWNLOAD_COMMAND = os.getenv('KAGGLE_DOWNLOAD_COMMAND', 
                                        f'kaggle competitions download -c {KAGGLE_COMPETITION}')
+    
+    # Links externos (opcional, para fallback)
+    DATA_DOWNLOAD_URL = os.getenv('DATA_DOWNLOAD_URL', '')
+    ALTERNATIVE_DATA_URL = os.getenv('ALTERNATIVE_DATA_URL', '')
     
     # Configurações do modelo
     DEFAULT_MODELS = [

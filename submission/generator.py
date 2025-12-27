@@ -27,25 +27,74 @@ class SubmissionGenerator:
             self.submissions_dir = Path(config.SUBMISSIONS_DIR)
         except ImportError:
             # Fallback
+            import os
+            from dotenv import load_dotenv
+            load_dotenv()
+            
             self.submissions_dir = Path(__file__).parent.parent / 'submissions'
             self.config = type('Config', (), {
-                'KAGGLE_COMPETITION': 'te-aprendizado-de-maquina'
+                'KAGGLE_COMPETITION': os.getenv('KAGGLE_COMPETITION', 'topicos-especiais-em-aprendizado-de-maquina-v2')
             })()
         
         # Garantir que o diretório existe
         self.submissions_dir.mkdir(exist_ok=True)
     
-    def generate_submission(self, test_ids, predictions, model_name, description=""):
+    def generate_submission(self, test_ids, predictions, model_name, description="", test_df=None):
         """Gera arquivo de submissão no formato correto para o Kaggle"""
         
         self.logger.info(f"Gerando submissão para {len(test_ids)} trajetórias...")
         
-        # Criar DataFrame de submissão com os nomes de colunas CORRETOS
-        submission_df = pd.DataFrame({
-            'trajectory_id': test_ids,
-            'latitude_pred': predictions[:, 0],  # CORRETO: latitude_pred
-            'longitude_pred': predictions[:, 1]   # CORRETO: longitude_pred
-        })
+        # Se as previsões estiverem em coordenadas locais (m), converter para lat/lon
+        preds_lat = predictions[:, 0].astype(float)
+        preds_lon = predictions[:, 1].astype(float)
+
+        # Detectar rapidamente se os valores parecem metros (fora do intervalo lat/lon)
+        is_meters = (np.abs(preds_lat).max() > 180) or (np.abs(preds_lon).max() > 180)
+
+        if is_meters and test_df is not None:
+            # Construir mapa de referência (trajectory_id -> start_lat,start_lon)
+            ref_map = {}
+            for _, r in test_df.iterrows():
+                tid = r.get('trajectory_id')
+                lat_list = r.get('path_lat_parsed') if 'path_lat_parsed' in r else None
+                lon_list = r.get('path_lon_parsed') if 'path_lon_parsed' in r else None
+                if isinstance(lat_list, (list, tuple)) and len(lat_list) > 0 and isinstance(lon_list, (list, tuple)) and len(lon_list) > 0:
+                    ref_map[tid] = (float(lat_list[0]), float(lon_list[0]))
+
+            # Funções de conversão compatíveis com FeatureEngineer.local_xy_to_latlon
+            R = 6371000.0
+            def local_xy_to_latlon(lat_ref, lon_ref, dx, dy):
+                lat0 = math.radians(lat_ref)
+                lon0 = math.radians(lon_ref)
+                lat = lat0 + dy / R
+                lon = lon0 + dx / (R * math.cos((lat + lat0) / 2.0))
+                return math.degrees(lat), math.degrees(lon)
+
+            import math
+            lat_out = []
+            lon_out = []
+            for tid, dx, dy in zip(test_ids, preds_lat, preds_lon):
+                if tid in ref_map:
+                    lat0, lon0 = ref_map[tid]
+                    latp, lonp = local_xy_to_latlon(lat0, lon0, dx, dy)
+                else:
+                    # fallback: manter valores originais (não convertidos)
+                    latp, lonp = dx, dy
+                lat_out.append(latp)
+                lon_out.append(lonp)
+
+            submission_df = pd.DataFrame({
+                'trajectory_id': test_ids,
+                'latitude_pred': lat_out,
+                'longitude_pred': lon_out
+            })
+        else:
+            # Criar DataFrame de submissão com os nomes de colunas CORRETOS
+            submission_df = pd.DataFrame({
+                'trajectory_id': test_ids,
+                'latitude_pred': preds_lat,
+                'longitude_pred': preds_lon
+            })
         
         # Validar dados
         self._validate_submission(submission_df)

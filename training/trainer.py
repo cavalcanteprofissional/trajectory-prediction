@@ -1,7 +1,7 @@
 # training/trainer.py
 import numpy as np
-from sklearn.model_selection import KFold, cross_val_score
 from sklearn.metrics import mean_squared_error, mean_absolute_error
+from typing import Optional, List
 import time
 import logging
 import math
@@ -108,93 +108,46 @@ class ModelTrainer:
             'mae_lon': mae_lon
         }
     
-    def train_model_cv(self, model, X, y, cv_folds=5, model_name=None):
-        """Treina modelo com validação cruzada"""
+    def train_model_cv(self, model, X, y, cv_folds=10, model_name=None):
+        """Treina modelo com validação cruzada usando o módulo cross_validation"""
+        
+        # Importar CrossValidator
+        from .cross_validation import CrossValidator
         
         if model_name is None:
             model_name = getattr(model, 'model_name', type(model).__name__)
         
-        self.logger.info(f"Treinando {model_name} com {cv_folds}-fold CV")
+        # Usar CrossValidator
+        validator = CrossValidator(n_splits=cv_folds, random_state=42, shuffle=True)
+        result = validator.cross_validate(model, X, y, model_name=model_name, verbose=True)
         
-        kf = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
-        fold_scores = []
-        fold_times = []
-        
-        for fold, (train_idx, val_idx) in enumerate(kf.split(X), 1):
-            start_time = time.time()
-            
-            X_train, X_val = X[train_idx], X[val_idx]
-            y_train, y_val = y[train_idx], y[val_idx]
-            
-            # Treinar modelo
-            model.fit(X_train, y_train)
-            
-            # Fazer predições
-            y_pred = model.predict(X_val)
-            
-            # Calcular erro (distância Haversine)
-            error = self.haversine_distance_vectorized(y_val, y_pred)
-            fold_time = time.time() - start_time
-            
-            fold_scores.append(error)
-            fold_times.append(fold_time)
-            
-            self.logger.info(f"  Fold {fold}/{cv_folds}: "
-                           f"Erro: {error:.4f} km, Tempo: {fold_time:.2f}s")
-        
-        mean_error = np.mean(fold_scores)
-        std_error = np.std(fold_scores)
-        mean_time = np.mean(fold_times)
-        
-        self.logger.info(f"Resultado {model_name}: {mean_error:.4f} ± {std_error:.4f} km")
-        
-        return {
-            'model': model,
-            'mean_error': mean_error,
-            'std_error': std_error,
-            'fold_scores': fold_scores,
-            'mean_time': mean_time,
-            'model_name': model_name
-        }
+        return result
     
-    def train_all_models(self, X, y, models, cv_folds=5):
-        """Treina todos os modelos"""
-        self.logger.info(f"Iniciando treinamento de {len(models)} modelos")
-        
-        results = {}
-        
-        for name, model in models.items():
-            try:
-                self.logger.info(f"--- {name} ---")
-                result = self.train_model_cv(model, X, y, cv_folds, name)
-                results[name] = result
-                
-                # Atualizar melhor modelo
-                if self.best_model_info is None or result['mean_error'] < self.best_model_info['mean_error']:
-                    self.best_model_info = result
-                    self.logger.info(f"🏆 Novo melhor modelo: {name} ({result['mean_error']:.4f} km)")
-                    
-            except Exception as e:
-                self.logger.error(f"❌ Erro ao treinar {name}: {e}")
-                # Log mais detalhado para debug
-                import traceback
-                self.logger.debug(f"Traceback: {traceback.format_exc()}")
-        
-        self.results = results
-        
-        # Ordenar resultados por erro
+    def train_all_models(self, X, y, models, cv_folds=10, groups: Optional[np.ndarray] = None, y_unit: str = 'degrees', refs_lat: Optional[np.ndarray] = None, refs_lon: Optional[np.ndarray] = None):
+        """Treina todos os modelos usando validação cruzada
+
+        Args:
+            X: Features de treino
+            y: Targets de treino
+            models: dict de modelos {name: model}
+            cv_folds: número de folds
+            groups: array opcional de grupos para GroupKFold
+            y_unit: 'degrees' ou 'meters' - indica unidade dos alvos
+        """
+
+        from .cross_validation import CrossValidator
+
+        validator = CrossValidator(n_splits=cv_folds, random_state=42, shuffle=True)
+        results = validator.validate_multiple_models(models, X, y, verbose=True, groups=groups, y_unit=y_unit, refs_lat=refs_lat, refs_lon=refs_lon)
+
+        # Atualizar melhor modelo
         if results:
-            sorted_results = dict(sorted(results.items(), 
-                                       key=lambda x: x[1]['mean_error']))
-            
-            self.logger.info("\n📊 RANKING DE MODELOS (menor erro é melhor):")
-            for i, (name, result) in enumerate(sorted_results.items(), 1):
-                self.logger.info(f"  {i:2d}. {name:20s}: {result['mean_error']:.4f} ± {result['std_error']:.4f} km")
-        else:
-            sorted_results = {}
-            self.logger.warning("Nenhum modelo foi treinado com sucesso")
-        
-        return sorted_results
+            best_name = min(results.keys(), key=lambda k: results[k]['mean_error'])
+            self.best_model_info = results[best_name]
+            self.logger.info(f"🏆 Melhor modelo: {best_name} ({self.best_model_info['mean_error']:.4f} km)")
+
+        self.results = results
+        return results
     
     def train_final_model(self, X, y):
         """Treina o melhor modelo em todos os dados"""
@@ -219,8 +172,12 @@ class ModelTrainer:
         
         self.logger.info(f"Treinando modelo final: {model_name} em {len(X)} amostras")
         
+        # Garantir ndarray consistente para evitar warnings de feature names
+        X_arr = np.asarray(X)
+        y_arr = np.asarray(y)
+
         start_time = time.time()
-        model.fit(X, y)
+        model.fit(X_arr, y_arr)
         train_time = time.time() - start_time
         
         self.logger.info(f"Modelo final treinado em {train_time:.2f}s")

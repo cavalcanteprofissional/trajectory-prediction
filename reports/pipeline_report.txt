@@ -1,10 +1,11 @@
-Relatorio do Pipeline - te-aprendizado-de-maquina
+Relatorio do Pipeline - topicos-especiais-em-aprendizado-de-maquina-v2
 ==================================================
-Data: 2025-12-18 17:31:56.752294
+Data: 2025-12-23 17:10:53.728219
 Modelo final: RandomForest
-Amostras de treino: 12050
+Amostras de treino (apos remocao de outliers): 11729
 Amostras de teste: 3013
-Features: 25
-Arquivo de submissao: E:\KAGGLE\trajectory-prediction\submissions\submission_RandomForest_20251218_173156.csv
+Features: 59
+Outliers removidos: 650 (5.39%)
+Arquivo de submissao: E:\KAGGLE\trajectory-prediction\submissions\submission_RandomForest_20251223_171053.csv
 Submissao enviada: NAO
-Melhor erro na validacao: 25.0584 km
+Melhor erro na validacao: 82.1958 km

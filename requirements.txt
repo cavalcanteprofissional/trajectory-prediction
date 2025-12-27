@@ -1,15 +1,14 @@
 # Requirements gerado automaticamente por requirements_scanner.py
-# Projeto: trajectory_prediction_project v1.0.0
+# Projeto: trajectory-prediction v1.0.0
 # Python requerido: >=3.8
 #
 # Para instalar: pip install -r requirements.txt
-# Para desenvolvimento: pip install -r requirements-dev.txt
-
+# Para Poetry: poetry add $(cat requirements.txt | grep -v '^#')
+#
 # Data Science & ML
 numpy>=1.24.0
 pandas>=2.0.0
 scikit-learn>=1.3.0
-scipy
 
 # Boosting
 catboost>=1.0.0
@@ -19,15 +18,32 @@ xgboost>=1.7.0
 # Utils & Tools
 python-dotenv>=1.0.0
 
+# Optimization
+optuna
+
 # Outras dependências
+folium
+geopy
 requirements_scanner
 setuptools
 tomli
 
-# Comandos úteis:
-# - Atualizar todas as dependências: pip install --upgrade -r requirements.txt
-# - Verificar dependências desatualizadas: pip list --outdated
-# - Gerar requirements.lock: pip freeze > requirements.lock
+# COMANDOS ÚTEIS:
+#
+# Usando pip:
+#   pip install -r requirements.txt
+#   pip install --upgrade -r requirements.txt
+#
+# Usando Poetry:
+#   poetry add $(cat requirements.txt | grep -v '^#' | xargs)
+#   poetry update
+#   poetry install
+#   poetry lock
+#
+# Geral:
+#   python -m pip install --upgrade pip
+#   pip list --outdated
+#   pip freeze > requirements.lock
 
 # Notas:
 # Este arquivo foi gerado automaticamente. Para editar manualmente,

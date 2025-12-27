@@ -10,6 +10,7 @@ import numpy as np
 import subprocess
 import os
 import argparse
+import json
 
 def initialize_project():
     """Inicializa o projeto"""
@@ -40,7 +41,7 @@ def initialize_project():
             'DATA_DIR': ROOT_DIR / 'data',
             'LOGS_DIR': ROOT_DIR / 'logs',
             'SUBMISSIONS_DIR': ROOT_DIR / 'submissions',
-            'KAGGLE_COMPETITION': 'te-aprendizado-de-maquina'
+            'KAGGLE_COMPETITION': os.getenv('KAGGLE_COMPETITION', 'topicos-especiais-em-aprendizado-de-maquina-v2')
         })()
 
 def setup_logging():
@@ -175,13 +176,116 @@ def run_data_pipeline(logger, config, auto_submit=False):
         if 'dest_lat' in train_data.columns:
             logger.info(f"   Destino: ({train_data.iloc[0]['dest_lat']:.6f}, {train_data.iloc[0]['dest_lon']:.6f})")
         
-        # 2. Engenharia de features
-        logger.info("\n2. ENGENHARIA DE FEATURES")
+        # 2. Detecção de outliers
+        # 2a. Limpeza inicial de dados inconsistentes / faltantes
+        logger.info("\n2. LIMPEZA INICIAL DE DADOS (tratamento e filtragem)")
+        try:
+            from features.cleaning import clean_train_test
+            logger.info("Aplicando limpeza conservadora nos dados (remover duplicatas, coerção numérica, coordenadas impossíveis, linhas sem destino)")
+            train_data, test_data = clean_train_test(train_data, test_data)
+            logger.info(f"   • Train após limpeza: {len(train_data)} amostras")
+            logger.info(f"   • Test após limpeza: {len(test_data)} amostras")
+        except Exception as e:
+            logger.warning(f"Falha na etapa de limpeza inicial: {e}")
+
+        logger.info("\n2b. DETECCAO DE OUTLIERS")
+        
+        # Ajustar limites geográficos para China e proximidades
+        from features import OutlierDetector
+        OutlierDetector.VALID_LAT_RANGE = (18.0, 54.0)  # Latitude da China: ~18° a 54° N
+        OutlierDetector.VALID_LON_RANGE = (73.0, 135.0)  # Longitude da China: ~73° a 135° E
+        
+        outlier_detector = OutlierDetector(
+            max_jump_distance_km=200.0,  # Reduzido: saltos >200km são suspeitos
+            max_speed_kmh=500.0,  # Reduzido: velocidades >500km/h são improváveis
+            contamination=0.02,  # Aumentado ligeiramente: 2%
+            use_isolation_forest=False,  # Manter desabilitado
+            use_geographic_bounds=False,  # Manter desabilitado
+            max_outlier_percentage=0.10  # Aumentado: máximo 10%
+        )
+        
+        # Detectar outliers nos dados originais
+        train_outliers_dict = outlier_detector.detect_all_outliers(
+            train_data,
+            use_geographic=True,  # Coordenadas inválidas
+            use_trajectory=True,  # HABILITADO: trajetórias com saltos grandes
+            use_target=True,  # Coordenadas inválidas no target
+            use_features=False  # Manter desabilitado por enquanto
+        )
+        
+        # Combinar outliers (qualquer tipo de outlier)
+        train_outliers_combined = outlier_detector.get_combined_outliers(
+            train_outliers_dict, method='any'
+        )
+        
+        # Gerar relatório
+        outlier_report = outlier_detector.get_outlier_report(
+            train_data, train_outliers_dict, train_outliers_combined
+        )
+        
+        logger.info(f"Outliers detectados:")
+        logger.info(f"   • Total: {outlier_report['total_outliers']} ({outlier_report['percentage_outliers']:.2f}%)")
+        logger.info(f"   • Amostras limpas: {outlier_report['clean_samples']}")
+        
+        for outlier_type, stats in outlier_report['by_type'].items():
+            logger.info(f"   • {outlier_type}: {stats['count']} ({stats['percentage']:.2f}%)")
+        
+        # Remover outliers do conjunto de treino
+        n_before = len(train_data)
+        
+        # Proteção adicional: NÃO remover dados se for mais que 2%
+        outlier_percentage = train_outliers_combined.sum() / len(train_data) if len(train_data) > 0 else 0
+        
+        if outlier_percentage > 0.02:  # Apenas 2% máximo
+            logger.warning(f"⚠️  {outlier_percentage*100:.1f}% dos dados foram marcados como outliers!")
+            logger.warning("   Aplicando proteção: removendo apenas coordenadas geográficas inválidas...")
+            
+            # Usar apenas outliers geográficos (coordenadas inválidas) - mais confiáveis
+            safe_outliers = pd.Series(False, index=train_data.index)
+            if 'geographic' in train_outliers_dict:
+                safe_outliers = safe_outliers | train_outliers_dict['geographic']
+            
+            # Adicionar apenas outliers de target (coordenadas inválidas)
+            if 'target' in train_outliers_dict:
+                safe_outliers = safe_outliers | train_outliers_dict['target']
+            
+            train_outliers_combined = safe_outliers
+            logger.info(f"   • Outliers seguros detectados: {safe_outliers.sum()} ({safe_outliers.sum()/len(train_data)*100:.1f}%)")
+        
+        train_data_clean = outlier_detector.remove_outliers(
+            train_data, train_outliers_combined, inplace=False
+        )
+        n_after = len(train_data_clean)
+        n_removed = n_before - n_after
+        
+        logger.info(f"\nRemovendo outliers do conjunto de treino:")
+        logger.info(f"   • Antes: {n_before} amostras")
+        logger.info(f"   • Depois: {n_after} amostras")
+        logger.info(f"   • Removidas: {n_removed} amostras")
+        
+        # Verificação final: garantir que há dados suficientes
+        if n_after == 0:
+            logger.error("❌ ERRO: Todos os dados foram removidos! Usando dados originais sem remoção de outliers.")
+            train_data_clean = train_data.copy()
+        
+        train_data = train_data_clean
+        
+        # 3. Engenharia de features
+        logger.info("\n3. ENGENHARIA DE FEATURES")
         
         from features import FeatureEngineer
         feature_engineer = FeatureEngineer()
+
+        # Aplicar augmentação leve para robustez (jitter + rotações pequenas)
+        try:
+            from features.augmentation import augment_dataframe
+            logger.info("Aplicando augmentacao leve ao conjunto de treino (p=0.25)")
+            train_data_aug = augment_dataframe(train_data, methods=['jitter', 'rotate'], p=0.25, seed=42)
+        except Exception as e:
+            logger.warning(f"Augmentation não disponível: {e}")
+            train_data_aug = train_data
         
-        train_features = feature_engineer.extract_all_features(train_data)
+        train_features = feature_engineer.extract_all_features(train_data_aug)
         test_features = feature_engineer.extract_all_features(test_data)
         
         if 'dest_lat' in train_data.columns:
@@ -190,12 +294,47 @@ def run_data_pipeline(logger, config, auto_submit=False):
         
         logger.info(f"Features extraidas: {train_features.shape[1]} features")
         
-        # 3. Preparar dados para treinamento
-        logger.info("\n3. PREPARANDO DADOS")
+        # Detectar outliers nas features (apenas se houver dados suficientes)
+        if len(train_features) > 0:
+            logger.info("\nDetectando outliers nas features...")
+            
+            # Garantir que train_features e train_data tenham os mesmos índices
+            common_indices = train_features.index.intersection(train_data.index)
+            if len(common_indices) != len(train_features) or len(common_indices) != len(train_data):
+                logger.warning(f"   ⚠️  Índices não alinhados. Reindexando...")
+                train_features = train_features.loc[common_indices]
+                train_data = train_data.loc[common_indices]
+            
+            # DESABILITADO: Detecção de outliers nas features pode remover dados importantes
+            # feature_outliers_dict = outlier_detector.detect_all_outliers(
+            #     train_data,
+            #     features_df=train_features,
+            #     use_geographic=False,
+            #     use_trajectory=False,
+            #     use_target=False,
+            #     use_features=True
+            # )
+            
+            # NÃO remover outliers de features - manter todos os dados
+            logger.info("   ℹ️  Detecção de outliers nas features DESABILITADA (muito agressiva)")
+            feature_outliers_combined = pd.Series(False, index=train_features.index)
         
+        # Garantir que dest_lat e dest_lon estão nas features após remoção
+        if 'dest_lat' in train_data.columns:
+            train_features['dest_lat'] = train_data['dest_lat'].values
+            train_features['dest_lon'] = train_data['dest_lon'].values
+        
+        # 4. Preparar dados para treinamento
+        logger.info("\n4. PREPARANDO DADOS")
+        
+        # Preparar dados para treinamento com RobustScaler (mais resistente a outliers)
         prepared_data = feature_engineer.prepare_features_for_training(
-            train_features, test_features
+            train_features, test_features, scaler_type='robust', use_local_target=True
         )
+        
+        # Armazenar pontos de referência para conversão de volta (se usando coordenadas locais)
+        test_starts_lat = test_features['start_lat'].values if 'start_lat' in test_features.columns else None
+        test_starts_lon = test_features['start_lon'].values if 'start_lon' in test_features.columns else None
         
         logger.info(f"Dados preparados:")
         logger.info(f"   • X_train: {prepared_data['X_train'].shape}")
@@ -204,8 +343,8 @@ def run_data_pipeline(logger, config, auto_submit=False):
         if 'y_train' in prepared_data:
             logger.info(f"   • y_train: {prepared_data['y_train'].shape}")
         
-        # 4. Treinar modelo
-        logger.info("\n4. TREINANDO MODELO")
+        # 5. Treinar modelo
+        logger.info("\n5. TREINANDO MODELO")
 
         from training import ModelTrainer
         trainer = ModelTrainer()
@@ -221,12 +360,43 @@ def run_data_pipeline(logger, config, auto_submit=False):
             n_features=prepared_data['X_train'].shape[1]
         )
 
-        # Treinar com validação cruzada
+        # Se existirem resultados do Optuna, aplicar os melhores parâmetros aos modelos correspondentes
+        optuna_file = Path('reports') / 'optuna_short_results.json'
+        if optuna_file.exists():
+            try:
+                with open(optuna_file, 'r', encoding='utf-8') as f:
+                    optuna_res = json.load(f)
+
+                for model_name, info in optuna_res.items():
+                    best_params = info.get('best_params')
+                    if best_params and model_name in models:
+                        logger.info(f"Aplicando params Optuna em {model_name}: {best_params}")
+                        try:
+                            models[model_name] = model_factory.create_model(model_name, params=best_params, n_features=prepared_data['X_train'].shape[1])
+                        except Exception as e:
+                            logger.warning(f"Falha ao criar {model_name} com params optuna: {e}")
+            except Exception as e:
+                logger.warning(f"Não foi possível ler optuna_short_results.json: {e}")
+
+        # IMPORTANTE: Validação cruzada usa APENAS dados de treino (train.csv)
+        # O test.csv é usado APENAS para predições finais, nunca para treino ou validação
+        logger.info("⚠️  VALIDAÇÃO CRUZADA: Usando apenas dados de TREINO (train.csv)")
+        logger.info("⚠️  TEST.CSV será usado APENAS para predições finais")
+        
+        # Treinar com validação cruzada (10 folds) - APENAS train.csv
+        groups = prepared_data.get('groups', None)
+        y_unit = 'meters' if test_starts_lat is not None else 'degrees'
+        refs_lat = train_features['start_lat'].values if y_unit == 'meters' else None
+        refs_lon = train_features['start_lon'].values if y_unit == 'meters' else None
         results = trainer.train_all_models(
-            prepared_data['X_train'],
-            prepared_data['y_train'],
+            prepared_data['X_train'],  # APENAS train.csv
+            prepared_data['y_train'],   # APENAS train.csv
             models,
-            cv_folds=5
+            cv_folds=10,
+            groups=groups,
+            y_unit=y_unit,
+            refs_lat=refs_lat,
+            refs_lon=refs_lon
         )
         
         # Treinar modelo final
@@ -237,16 +407,30 @@ def run_data_pipeline(logger, config, auto_submit=False):
         
         logger.info(f"Modelo treinado: {final_model_info['model_name']}")
         
-        # 5. Fazer predições
-        logger.info("\n5. FAZENDO PREDICOES")
+        # 6. Fazer predições
+        logger.info("\n6. FAZENDO PREDICOES")
+        logger.info("⚠️  Usando test.csv APENAS para predições finais (não usado em treino/validação)")
         
         final_model = final_model_info['model']
-        predictions = final_model.predict(prepared_data['X_test'])
+        predictions = final_model.predict(prepared_data['X_test'])  # APENAS test.csv para predições
+        
+        # Se usando coordenadas locais, converter de volta para lat/lon
+        if test_starts_lat is not None and test_starts_lon is not None:
+            logger.info("Convertendo predições de coordenadas locais para lat/lon...")
+            dest_lats = []
+            dest_lons = []
+            for i in range(len(predictions)):
+                lat, lon = FeatureEngineer.local_xy_to_latlon(
+                    test_starts_lat[i], test_starts_lon[i], predictions[i, 0], predictions[i, 1]
+                )
+                dest_lats.append(lat)
+                dest_lons.append(lon)
+            predictions = np.column_stack([dest_lats, dest_lons])
         
         logger.info(f"{len(predictions)} predicoes geradas")
         
-        # 6. Salvar submissão
-        logger.info("\n6. SALVANDO SUBMISSAO")
+        # 7. Salvar submissão
+        logger.info("\n7. SALVANDO SUBMISSAO")
         
         from submission import SubmissionGenerator
         submission_gen = SubmissionGenerator()
@@ -255,15 +439,16 @@ def run_data_pipeline(logger, config, auto_submit=False):
             test_ids=test_data['trajectory_id'].values,
             predictions=predictions,
             model_name=final_model_info['model_name'],
-            description=f"Modelo {final_model_info['model_name']} - {config.KAGGLE_COMPETITION}"
+            description=f"Modelo {final_model_info['model_name']} - {config.KAGGLE_COMPETITION}",
+            test_df=test_data
         )
         
         logger.info(f"Submissao salva: {submission_file}")
         
-        # 7. Submissão automática ao Kaggle (se solicitado)
+        # 8. Submissão automática ao Kaggle (se solicitado)
         submission_success = False
         if auto_submit:
-            logger.info("\n7. ENVIANDO SUBMISSAO AO KAGGLE")
+            logger.info("\n8. ENVIANDO SUBMISSAO AO KAGGLE")
             submission_success = submit_to_kaggle_automatically(
                 submission_file,
                 final_model_info['model_name'],
@@ -276,7 +461,7 @@ def run_data_pipeline(logger, config, auto_submit=False):
             else:
                 logger.warning("⚠️  Falha ao enviar submissao ao Kaggle")
         
-        # 8. Mostrar estatísticas
+        # 9. Mostrar estatísticas
         print("\n" + "=" * 60)
         print("ESTATISTICAS FINAIS")
         print("=" * 60)
@@ -297,7 +482,7 @@ def run_data_pipeline(logger, config, auto_submit=False):
         })
         print(preview_df.to_string(index=False))
         
-        # 9. Salvar relatório
+        # 10. Salvar relatório
         report_file = config.ROOT_DIR / 'reports' / 'pipeline_report.txt'
         report_file.parent.mkdir(exist_ok=True)
         
@@ -306,9 +491,10 @@ def run_data_pipeline(logger, config, auto_submit=False):
             f.write("=" * 50 + "\n")
             f.write(f"Data: {pd.Timestamp.now()}\n")
             f.write(f"Modelo final: {final_model_info['model_name']}\n")
-            f.write(f"Amostras de treino: {len(train_data)}\n")
+            f.write(f"Amostras de treino (apos remocao de outliers): {len(train_data)}\n")
             f.write(f"Amostras de teste: {len(test_data)}\n")
             f.write(f"Features: {train_features.shape[1]}\n")
+            f.write(f"Outliers removidos: {outlier_report['total_outliers']} ({outlier_report['percentage_outliers']:.2f}%)\n")
             f.write(f"Arquivo de submissao: {submission_file}\n")
             f.write(f"Submissao enviada: {'SIM' if submission_success else 'NAO'}\n")
             
@@ -394,6 +580,8 @@ Exemplos de uso:
                        help='Executa pipeline completo e envia submissão para Kaggle')
     parser.add_argument('--submit-only', action='store_true',
                        help='Apenas envia o último arquivo de submissão (não executa pipeline)')
+    parser.add_argument('--cv-folds', type=int, default=10,
+                       help='Número de folds para validação cruzada (default: 10)')
     parser.add_argument('-m', '--message', type=str, default='',
                        help='Mensagem customizada para submissão Kaggle')
     parser.add_argument('--model', type=str, default='',
