@@ -26,6 +26,10 @@ def clean_dataframe(df: pd.DataFrame, *, is_train: bool = True, min_points: int 
 
     df = df.copy()
 
+    # Remove specific trajectory from training set
+    if is_train and 'trajectory_id' in df.columns:
+        df = df[df['trajectory_id'] != '128_20090222093321']
+
     # Drop duplicates by trajectory_id if present
     if 'trajectory_id' in df.columns:
         df = df.drop_duplicates(subset=['trajectory_id'])

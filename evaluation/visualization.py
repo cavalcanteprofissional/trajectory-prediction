@@ -449,13 +449,6 @@ def main():
     if args.trajectory:
         print(f"Analisando trajetória específica: {args.trajectory}")
         visualizer.plot_trajectory_comparison(args.trajectory)
-    else:
-        # Análise de exemplo
-        train_df, test_df = visualizer.loader.load_data()
-        if len(test_df) > 0:
-            sample_id = test_df.iloc[0]['trajectory_id']
-            print(f"Analisando trajetória de exemplo: {sample_id}")
-            visualizer.plot_trajectory_comparison(sample_id)
 
 
 if __name__ == '__main__':
