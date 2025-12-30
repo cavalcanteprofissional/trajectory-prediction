@@ -198,10 +198,10 @@ def run_data_pipeline(logger, config, auto_submit=False):
         outlier_detector = OutlierDetector(
             max_jump_distance_km=200.0,  # Reduzido: saltos >200km são suspeitos
             max_speed_kmh=500.0,  # Reduzido: velocidades >500km/h são improváveis
-            contamination=0.02,  # Aumentado ligeiramente: 2%
+            contamination=0.03,  # Aumentado ligeiramente: 3%
             use_isolation_forest=False,  # Manter desabilitado
             use_geographic_bounds=False,  # Manter desabilitado
-            max_outlier_percentage=0.10  # Aumentado: máximo 10%
+            max_outlier_percentage=0.08  # Reduzido: máximo 8%
         )
         
         # Detectar outliers nos dados originais
@@ -236,7 +236,7 @@ def run_data_pipeline(logger, config, auto_submit=False):
         # Proteção adicional: NÃO remover dados se for mais que 2%
         outlier_percentage = train_outliers_combined.sum() / len(train_data) if len(train_data) > 0 else 0
         
-        if outlier_percentage > 0.02:  # Apenas 2% máximo
+        if outlier_percentage > 0.03:  # Apenas 3% máximo
             logger.warning(f"⚠️  {outlier_percentage*100:.1f}% dos dados foram marcados como outliers!")
             logger.warning("   Aplicando proteção: removendo apenas coordenadas geográficas inválidas...")
             
@@ -279,8 +279,8 @@ def run_data_pipeline(logger, config, auto_submit=False):
         # Aplicar augmentação leve para robustez (jitter + rotações pequenas)
         try:
             from features.augmentation import augment_dataframe
-            logger.info("Aplicando augmentacao leve ao conjunto de treino (p=0.25)")
-            train_data_aug = augment_dataframe(train_data, methods=['jitter', 'rotate'], p=0.25, seed=42)
+            logger.info("Aplicando augmentacao para aumentar dados de treino (p=0.5)")
+            train_data_aug = augment_dataframe(train_data, methods=['jitter', 'drop', 'rotate'], p=0.5, seed=42)
         except Exception as e:
             logger.warning(f"Augmentation não disponível: {e}")
             train_data_aug = train_data

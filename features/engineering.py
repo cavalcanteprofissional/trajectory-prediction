@@ -4,6 +4,7 @@ import pandas as pd
 from math import radians, sin, cos, sqrt, atan2
 from pathlib import Path
 import math
+from scipy.stats import skew, kurtosis
 
 class FeatureEngineer:
     """Classe para engenharia de features"""
@@ -281,6 +282,128 @@ class FeatureEngineer:
                 else:
                     features['remaining_distance'] = 0
 
+                # NOVAS FEATURES: Linear trend (slope and intercept for lat/lon over point index)
+                if len(lat_list) >= 3:
+                    indices = np.arange(len(lat_list))
+                    try:
+                        lat_slope, lat_intercept = np.polyfit(indices, lat_list, 1)
+                        lon_slope, lon_intercept = np.polyfit(indices, lon_list, 1)
+                        features['lat_slope'] = lat_slope
+                        features['lat_intercept'] = lat_intercept
+                        features['lon_slope'] = lon_slope
+                        features['lon_intercept'] = lon_intercept
+                        # Trend magnitude
+                        features['trend_magnitude'] = np.sqrt(lat_slope**2 + lon_slope**2)
+                        # Trend direction (bearing of slope vector)
+                        features['trend_bearing'] = (np.arctan2(lon_slope, lat_slope) * 180 / math.pi) % 360
+                    except:
+                        features['lat_slope'] = 0
+                        features['lat_intercept'] = lat_list[0] if lat_list else 0
+                        features['lon_slope'] = 0
+                        features['lon_intercept'] = lon_list[0] if lon_list else 0
+                        features['trend_magnitude'] = 0
+                        features['trend_bearing'] = 0
+
+                # NOVAS FEATURES: Polynomial fit (degree 2) coefficients
+                if len(lat_list) >= 5:
+                    try:
+                        lat_poly = np.polyfit(indices, lat_list, 2)
+                        lon_poly = np.polyfit(indices, lon_list, 2)
+                        features['lat_poly_a'] = lat_poly[0]  # quadratic term
+                        features['lat_poly_b'] = lat_poly[1]  # linear term
+                        features['lat_poly_c'] = lat_poly[2]  # constant term
+                        features['lon_poly_a'] = lon_poly[0]
+                        features['lon_poly_b'] = lon_poly[1]
+                        features['lon_poly_c'] = lon_poly[2]
+                        # Curvature magnitude
+                        features['poly_curvature'] = np.sqrt(lat_poly[0]**2 + lon_poly[0]**2)
+                    except:
+                        features['lat_poly_a'] = 0
+                        features['lat_poly_b'] = 0
+                        features['lat_poly_c'] = lat_list[0] if lat_list else 0
+                        features['lon_poly_a'] = 0
+                        features['lon_poly_b'] = 0
+                        features['lon_poly_c'] = lon_list[0] if lon_list else 0
+                        features['poly_curvature'] = 0
+
+                # NOVAS FEATURES: Last segment detailed features
+                if len(lat_list) >= 3 and speeds and bearings:
+                    features['last_segment_speed'] = speeds[-1]
+                    features['last_segment_bearing'] = bearings[-1] * 180 / math.pi % 360
+                    if len(speeds) >= 2:
+                        features['last_acceleration'] = speeds[-1] - speeds[-2]
+                    else:
+                        features['last_acceleration'] = 0
+
+                    # Direction change in last segments
+                    if len(bearings) >= 3:
+                        last_change = abs(bearings[-1] - bearings[-2])
+                        prev_change = abs(bearings[-2] - bearings[-3])
+                        features['last_direction_change'] = last_change * 180 / math.pi
+                        features['prev_direction_change'] = prev_change * 180 / math.pi
+                        features['direction_change_trend'] = last_change - prev_change
+
+                # NOVAS FEATURES: Distance from centroid to end point
+                if len(lat_list) >= 2:
+                    centroid_lat = np.mean(lat_list)
+                    centroid_lon = np.mean(lon_list)
+                    end_lat, end_lon = lat_list[-1], lon_list[-1]
+                    centroid_to_end = self.haversine_distance(centroid_lat, centroid_lon, end_lat, end_lon)
+                    features['centroid_to_end_distance'] = centroid_to_end
+                    features['centroid_to_end_ratio'] = centroid_to_end / features.get('total_distance', 1) if features.get('total_distance', 0) > 0 else 0
+
+                # NOVAS FEATURES: Start to end vector vs last segment vector angle
+                if len(lat_list) >= 3 and bearings:
+                    start_lat, start_lon = lat_list[0], lon_list[0]
+                    end_lat, end_lon = lat_list[-1], lon_list[-1]
+                    start_to_end_bearing = math.atan2(end_lon - start_lon, end_lat - start_lat) * 180 / math.pi % 360
+                    last_segment_bearing = bearings[-1] * 180 / math.pi % 360
+                    angle_diff = abs(start_to_end_bearing - last_segment_bearing)
+                    angle_diff = min(angle_diff, 360 - angle_diff)  # smallest angle
+                    features['start_end_vs_last_angle'] = angle_diff
+
+                # NOVAS FEATURES: Direction consistency (how aligned are segments with overall direction)
+                if len(bearings) >= 2:
+                    overall_bearing = math.atan2(lon_list[-1] - lon_list[0], lat_list[-1] - lat_list[0])
+                    bearing_diffs = [abs(b - overall_bearing) for b in bearings]
+                    features['direction_consistency'] = np.mean([min(d, 2*math.pi - d) for d in bearing_diffs]) * 180 / math.pi
+
+                # NOVAS FEATURES: More percentiles for various features
+                if segment_distances:
+                    seg = np.array(segment_distances)
+                    features['seg_p5'] = float(np.percentile(seg, 5))
+                    features['seg_p15'] = float(np.percentile(seg, 15))
+                    features['seg_p85'] = float(np.percentile(seg, 85))
+                    features['seg_p95'] = float(np.percentile(seg, 95))
+
+                if bearings:
+                    bearings_deg = np.array(bearings) * 180 / math.pi % 360
+                    features['bearing_p5'] = float(np.percentile(bearings_deg, 5))
+                    features['bearing_p15'] = float(np.percentile(bearings_deg, 15))
+                    features['bearing_p85'] = float(np.percentile(bearings_deg, 85))
+                    features['bearing_p95'] = float(np.percentile(bearings_deg, 95))
+
+                if speeds:
+                    features['speed_p5'] = float(np.percentile(speeds, 5))
+                    features['speed_p15'] = float(np.percentile(speeds, 15))
+                    features['speed_p85'] = float(np.percentile(speeds, 85))
+                    features['speed_p95'] = float(np.percentile(speeds, 95))
+
+                # NOVAS FEATURES: Statistical moments (skewness, kurtosis)
+                if len(segment_distances) >= 3:
+                    from scipy.stats import skew, kurtosis
+                    features['seg_skewness'] = float(skew(segment_distances))
+                    features['seg_kurtosis'] = float(kurtosis(segment_distances))
+
+                if len(speeds) >= 3:
+                    features['speed_skewness'] = float(skew(speeds))
+                    features['speed_kurtosis'] = float(kurtosis(speeds))
+
+                if len(bearings) >= 3:
+                    bearings_deg = np.array(bearings) * 180 / math.pi % 360
+                    features['bearing_skewness'] = float(skew(bearings_deg))
+                    features['bearing_kurtosis'] = float(kurtosis(bearings_deg))
+
             features_list.append(features)
 
         features_df = pd.DataFrame(features_list)
@@ -332,6 +455,8 @@ class FeatureEngineer:
         Por padrão é False para manter targets em lat/lon (graus), compatível com `ModelTrainer`.
         """
         from sklearn.preprocessing import StandardScaler
+        from sklearn.feature_selection import SelectKBest, f_regression
+        from sklearn.decomposition import PCA
 
         # Separar features e target (remover trajectory_id se presente)
         feature_cols = [col for col in train_features.columns if col not in target_cols + ['trajectory_id']]
@@ -415,6 +540,33 @@ class FeatureEngineer:
 
         X_train_scaled = scaler.fit_transform(X_train)
         X_test_scaled = scaler.transform(X_test)
+
+        # Feature Selection: Select top features based on correlation with target
+        k_features = max(50, int(0.7 * X_train_scaled.shape[1]))  # Select at least 50, up to 70% of features
+        selector = SelectKBest(score_func=f_regression, k=k_features)
+        
+        # Use the first target (latitude) for feature selection
+        y_for_selection = y_train[:, 0] if len(y_train.shape) > 1 else y_train
+        X_train_selected = selector.fit_transform(X_train_scaled, y_for_selection)
+        X_test_selected = selector.transform(X_test_scaled)
+        
+        # Get selected feature names
+        selected_mask = selector.get_support()
+        selected_feature_names = [feature_cols[i] for i in range(len(feature_cols)) if selected_mask[i]]
+        
+        # Log feature selection
+        try:
+            from utils.logger import get_logger
+            logger = get_logger(__name__)
+            logger.info(f"Feature selection: {X_train_scaled.shape[1]} -> {X_train_selected.shape[1]} features")
+            logger.info(f"Top features: {selected_feature_names[:10]}...")  # Log first 10
+        except:
+            pass
+
+        # Update X_train and X_test
+        X_train_scaled = X_train_selected
+        X_test_scaled = X_test_selected
+        feature_cols = selected_feature_names
 
         # Log apenas se logger estiver disponível
         try:
