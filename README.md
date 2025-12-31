@@ -40,6 +40,7 @@ O projeto utiliza a **Distância Haversine** (em quilômetros) como métrica pri
 - ✅ **Múltiplos Modelos**: Suporte a 16+ algoritmos de ML
 - ✅ **Validação Cruzada Robusta**: 5-fold cross-validation com métrica Haversine
 - ✅ **Detecção de Outliers**: Sistema inteligente de detecção e remoção de outliers
+- ✅ **Clusterização de Dados**: Agrupamento dos dados após limpeza para focar no maior cluster
 - ✅ **Engenharia de Features Avançada**: 30+ features extraídas das trajetórias
 - ✅ **Ensemble de Modelos**: Suporte a Voting Regressor e Bagging
 - ✅ **Separação de Dados**: Garantia de que train.csv e test.csv são usados corretamente
@@ -245,6 +246,13 @@ O pipeline executa as seguintes etapas em ordem:
 - **Outliers de Trajetória**: Saltos grandes e velocidades impossíveis
 - **Outliers de Target**: Destinos com coordenadas inválidas
 - **Proteções**: Limite máximo de remoção para evitar perda excessiva de dados
+
+### 2b. Clusterização de Dados
+- Agrupamento dos dados limpos usando K-means
+- Extração de features de clusterização (posição, distância, geometria)
+- Seleção automática do número ótimo de clusters via silhouette score
+- Filtragem para usar apenas o maior cluster no treinamento
+- Redução de variabilidade e foco em padrões similares
 
 ### 3. Engenharia de Features
 - Extração de 30+ features das trajetórias

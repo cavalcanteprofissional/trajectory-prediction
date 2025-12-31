@@ -270,6 +270,23 @@ def run_data_pipeline(logger, config, auto_submit=False):
         
         train_data = train_data_clean
         
+        # 2c. CLUSTERIZAÇÃO DOS DADOS
+        logger.info("\n2c. CLUSTERIZACAO DOS DADOS")
+        
+        from features import DataClusterer
+        clusterer = DataClusterer(method='kmeans', random_state=42)
+        
+        # Aplicar clusterização aos dados limpos
+        cluster_labels = clusterer.fit_predict(train_data)
+        
+        # Filtrar apenas o maior cluster para treinamento
+        train_data_clustered = clusterer.get_largest_cluster_data(train_data, cluster_labels)
+        
+        # Atualizar train_data para usar apenas o maior cluster
+        train_data = train_data_clustered
+        
+        logger.info(f"Dados após clusterização: {len(train_data)} amostras")
+        
         # 3. Engenharia de features
         logger.info("\n3. ENGENHARIA DE FEATURES")
         
